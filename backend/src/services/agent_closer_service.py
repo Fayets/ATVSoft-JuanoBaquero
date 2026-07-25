@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from pony.orm import db_session
@@ -10,16 +10,28 @@ from pony.orm import db_session
 from src.models import Lead
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+BOGOTA_TZ = ZoneInfo("America/Bogota")
 
 
 def _naive_now_ar() -> datetime:
     return datetime.now(AR_TZ).replace(tzinfo=None)
 
 
+def _day_bounds_utc_naive(fecha: date, tz: ZoneInfo = BOGOTA_TZ) -> tuple[datetime, datetime]:
+    """Día civil en `tz` → [inicio, fin] UTC naive para filtrar `Lead.call`.
+
+    Ej. 2026-07-01 America/Bogota → 2026-07-01 05:00:00 … 2026-07-02 04:59:59.999999 UTC.
+    """
+    start_local = datetime.combine(fecha, time.min, tzinfo=tz)
+    end_local = datetime.combine(fecha, time.max, tzinfo=tz)
+    inicio = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    fin = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return inicio, fin
+
+
 def _today_bounds_ar() -> tuple[datetime, datetime, date]:
     hoy = datetime.now(AR_TZ).date()
-    inicio = datetime.combine(hoy, time.min)
-    fin = datetime.combine(hoy, time.max)
+    inicio, fin = _day_bounds_utc_naive(hoy, AR_TZ)
     return inicio, fin, hoy
 
 
@@ -47,14 +59,13 @@ def _leads_call_between(user_id: int, inicio: datetime, fin: datetime) -> list[L
 
 @db_session
 def list_llamadas_hoy(user_id: int) -> dict:
-    hoy = datetime.now(AR_TZ).date()
+    hoy = datetime.now(BOGOTA_TZ).date()
     return list_llamadas_dia(user_id, hoy)
 
 
 @db_session
 def list_llamadas_dia(user_id: int, fecha: date) -> dict:
-    inicio = datetime.combine(fecha, time.min)
-    fin = datetime.combine(fecha, time.max)
+    inicio, fin = _day_bounds_utc_naive(fecha, BOGOTA_TZ)
     rows = _leads_call_between(user_id, inicio, fin)
     rows.sort(key=lambda l: l.call or datetime.min)
     return {

@@ -64,10 +64,15 @@ def list_llamadas_dia(user_id: int, fecha: date) -> dict:
 
 
 def _call_iso(call: datetime | None) -> str | None:
+    """UTC ISO con Z para que el frontend solo aplique Intl.timeZone una vez."""
     if call is None:
         return None
-    dt = call.replace(tzinfo=None) if call.tzinfo is not None else call
-    return dt.isoformat()
+    from datetime import timezone as _tz
+
+    dt = call
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_tz.utc).replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds") + "Z"
 
 
 def _llamada_item(l: Lead) -> dict:

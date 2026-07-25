@@ -27,23 +27,52 @@ export function findTimezoneOption(timeZone: string | null | undefined): Timezon
 }
 
 /**
- * Parsea ISO de `call` del backend.
- * Los naive (sin Z/offset) se tratan como UTC — así los guarda Calendly/GHL.
+ * Instant absoluto de `call` / `scheduled_at`.
+ *
+ * Contrato: el backend manda UTC (idealmente con sufijo `Z`).
+ * - Con `Z` u offset → se respeta tal cual (una sola vez).
+ * - Naive → se interpreta como UTC (se agrega `Z`), NUNCA como hora local del browser.
+ *
+ * Luego el único paso de zona es Intl `{ timeZone }` al formatear.
  */
 export function parseCallInstant(raw: string | null | undefined): Date | null {
   const s = raw != null ? String(raw).trim() : ''
   if (!s) return null
+
+  // Solo fecha calendario
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T12:00:00Z`)
+    const d = new Date(`${s}T12:00:00.000Z`)
     return Number.isNaN(d.getTime()) ? null : d
   }
-  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) {
-    const d = new Date(s)
+
+  let iso = s.includes('T') ? s : s.replace(' ', 'T')
+
+  // Ya es absoluto: no tocar
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso)) {
+    const d = new Date(iso)
     return Number.isNaN(d.getTime()) ? null : d
   }
-  const normalized = s.includes('T') ? s : s.replace(' ', 'T')
-  const d = new Date(`${normalized}Z`)
+
+  // Naive → UTC explícito (evitar Date(...) local del browser = doble offset)
+  if (!iso.endsWith('Z')) iso = `${iso}Z`
+  const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? null : d
+}
+
+function formatWithZone(
+  d: Date,
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): string | null {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hourCycle: 'h23',
+      ...options,
+    }).format(d)
+  } catch {
+    return null
+  }
 }
 
 /** Fecha call: `dd/mm/aaaa` en la timezone elegida. */
@@ -53,16 +82,11 @@ export function formatCallDate(
 ): string | null {
   const d = parseCallInstant(raw)
   if (!d) return null
-  try {
-    return new Intl.DateTimeFormat('es-AR', {
-      timeZone,
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    }).format(d)
-  } catch {
-    return null
-  }
+  return formatWithZone(d, timeZone, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
 }
 
 /** Hora call: `HH:mm` en la timezone elegida. */
@@ -72,16 +96,10 @@ export function formatCallTime(
 ): string | null {
   const d = parseCallInstant(raw)
   if (!d) return null
-  try {
-    return new Intl.DateTimeFormat('es-AR', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d)
-  } catch {
-    return null
-  }
+  return formatWithZone(d, timeZone, {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 /** Fecha + hora call compacta. */
@@ -91,17 +109,12 @@ export function formatCallDateTime(
 ): string | null {
   const d = parseCallInstant(raw)
   if (!d) return null
-  try {
-    return new Intl.DateTimeFormat('es-AR', {
-      timeZone,
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d)
-  } catch {
-    return null
-  }
+  // en-GB → `dd/mm/yyyy, HH:mm` estable; un solo timeZone (sin offset manual).
+  return formatWithZone(d, timeZone, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

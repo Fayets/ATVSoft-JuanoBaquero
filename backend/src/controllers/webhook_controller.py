@@ -247,20 +247,24 @@ def _calendly_webhook_received_at(flat: dict, inner: dict) -> datetime:
     if raw:
         dt = _parse_calendly_start_time(str(raw))
         if dt is not None:
-            if dt.tzinfo is not None:
-                dt = dt.replace(tzinfo=None)
             return dt
     return datetime.utcnow()
 
 
 def _parse_calendly_start_time(raw: str | None) -> datetime | None:
+    """Parsea ISO Calendly → UTC naive."""
     if not raw or not str(raw).strip():
         return None
+    from datetime import timezone
+
     s = str(raw).strip().replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
     except ValueError:
         return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def _ig_from_calendly_qa(payload: dict) -> str:

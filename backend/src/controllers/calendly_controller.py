@@ -232,10 +232,13 @@ def _fetch_scheduled_events(
 
 
 def _naive_utc(dt: datetime | None) -> datetime | None:
+    """Convierte a UTC y deja naive (no strip de tz sin convertir)."""
     if dt is None:
         return None
+    from datetime import timezone
+
     if dt.tzinfo is not None:
-        return dt.replace(tzinfo=None)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 
@@ -527,7 +530,7 @@ def _run_calendly_sync(
             event_uuid = _uri_uuid(str(event.get("uri") or ""))
             if not event_uuid:
                 continue
-            start_dt = _parse_calendly_start_time(str(event.get("start_time") or ""))
+            start_dt = _naive_utc(_parse_calendly_start_time(str(event.get("start_time") or "")))
             if invitee_request_count > 0:
                 time.sleep(_INVITEE_REQUEST_DELAY_S)
             invitee_request_count += 1
@@ -547,7 +550,9 @@ def _run_calendly_sync(
                         "name": str(invitee.get("name") or "").strip(),
                         "email": email,
                         "call_at": start_dt,
-                        "agendo_at": _parse_calendly_start_time(str(invitee.get("created_at") or "")),
+                        "agendo_at": _naive_utc(
+                            _parse_calendly_start_time(str(invitee.get("created_at") or ""))
+                        ),
                         "form_fields": _extract_calendly_form_fields(invitee, invitee),
                     }
                 )

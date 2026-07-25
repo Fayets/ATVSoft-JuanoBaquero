@@ -56,14 +56,32 @@ def _month_bounds_iso(month: str) -> tuple[str, str]:
     return start, end
 
 def _parse_ghl_datetime(raw: str | None) -> datetime | None:
+    """Normaliza startTime GHL a UTC naive (sin doble offset en el cliente)."""
     if not raw:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(raw.strip(), fmt)
-        except ValueError:
-            continue
-    return None
+    from datetime import timezone
+
+    s = str(raw).strip()
+    if not s:
+        return None
+    # fromisoformat no traga 'Z'
+    s_iso = s.replace("Z", "+00:00").replace("z", "+00:00")
+    dt: datetime | None = None
+    try:
+        dt = datetime.fromisoformat(s_iso)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.strptime(s[:19], fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    # Naive: GHL/LeadConnector suele mandar UTC sin sufijo
+    return dt
 
 def _ghl_get(
     client: httpx.Client,

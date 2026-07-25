@@ -162,11 +162,13 @@ def require_user_id(
 
 
 def _dt_iso(dt: datetime | None) -> str | None:
+    """Serializa datetimes de call/agenda como UTC con sufijo Z (sin ambigüedad local)."""
     if dt is None:
         return None
     if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
-    return dt.isoformat()
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    # Naive en BD = UTC wall-clock (contrato Calendly/GHL normalizado).
+    return dt.isoformat(timespec="seconds") + "Z"
 
 
 def _agendo_en_looks_like_iso_datetime(val: str | None) -> bool:

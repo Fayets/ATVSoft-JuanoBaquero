@@ -31,6 +31,7 @@ from src.controllers.hot_leads_controller import router as hot_leads_router
 from src.controllers.reels_controller import router as reels_router
 from src.controllers.stories_controller import router as stories_router
 from src.controllers.sync_settings_controller import router as sync_settings_router
+from src.controllers.user_settings_controller import router as user_settings_router
 from src.controllers.team_controller import router as team_router
 from src.controllers.youtube_controller import router as youtube_router
 from src.controllers.weekly_reports_controller import router as weekly_reports_router
@@ -237,6 +238,7 @@ app.include_router(keywords_router)
 app.include_router(reels_router)
 app.include_router(bio_router)
 app.include_router(stories_router)
+app.include_router(user_settings_router)
 app.include_router(sync_settings_router)
 app.include_router(team_router)
 app.include_router(weekly_reports_router)

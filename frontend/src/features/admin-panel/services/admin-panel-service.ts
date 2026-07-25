@@ -6,6 +6,7 @@ const TOKEN_KEY = 'atvmkt_admin_panel_token'
 type ApiDailyCallRow = {
   id: number
   hora: string
+  call?: string | null
   lead: string
   closer?: string
   link_llamada?: string
@@ -90,6 +91,7 @@ export async function getAdminDailyCalls(
     return {
       id: row.id,
       hora: row.hora,
+      call: row.call?.trim() || null,
       lead: row.lead,
       closer: effective,
       call_link: row.link_llamada || row.call_link || '',

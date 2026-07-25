@@ -6,7 +6,9 @@ import { MonthSelector } from '@/shared/components/month-selector'
 import { Modal } from '@/shared/components/modal'
 import { useToast } from '@/shared/components/toast'
 import { useAuthUser } from '@/shared/hooks/use-auth-user'
+import { useTimezone } from '@/shared/hooks/use-timezone'
 import { formatCash } from '@/shared/lib/format-utils'
+import { formatCallDateTime } from '@/shared/lib/timezone'
 import { apiFetch, backendAuthHeaders, formatApiDetail } from '@/lib/api'
 import { AgendaPointPickerModal } from './agenda-point-picker-modal'
 import { FormularioLeadModal } from './formulario-lead-modal'
@@ -200,10 +202,13 @@ function originSelectOptions(lead: Lead): string[] {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MAIN PAGE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const CALL_DATE_KEYS = new Set(['scheduled_at', 'call_at', 'call'])
+
 export function LeadsPage() {
   const { month, options, setMonth } = useMonthContext()
   const { toast } = useToast()
   const { ready, userId } = useAuthUser()
+  const { timeZone } = useTimezone()
 
   // Data
   const [leads, setLeads] = useState<Lead[]>([])
@@ -908,6 +913,7 @@ export function LeadsPage() {
                 resolveAgendaBadgeLabel={resolveAgendaBadgeLabel}
                 onOpenAgendaPicker={(lead) => setAgendaModalLead(lead)}
                 onOpenFormulario={(lead) => setFormularioModalLead(lead)}
+                timeZone={timeZone}
               />
             </div>
               )
@@ -932,6 +938,7 @@ export function LeadsPage() {
             resolveAgendaBadgeLabel={resolveAgendaBadgeLabel}
             onOpenAgendaPicker={(lead) => setAgendaModalLead(lead)}
             onOpenFormulario={(lead) => setFormularioModalLead(lead)}
+            timeZone={timeZone}
           />
         </div>
       )}
@@ -1214,6 +1221,7 @@ function LeadsTable({
   resolveAgendaBadgeLabel,
   onOpenAgendaPicker,
   onOpenFormulario,
+  timeZone,
 }: {
   leads: Lead[]
   columns: ColumnDef[]
@@ -1230,6 +1238,7 @@ function LeadsTable({
   onAddRow: () => void
   addingRow: boolean
   totalLeads: number
+  timeZone: string
   rowOffset?: number
   onPreviewText: (title: string, text: string) => void
   readOnly?: boolean
@@ -1347,6 +1356,7 @@ function LeadsTable({
                   resolveAgendaBadgeLabel={resolveAgendaBadgeLabel}
                   onOpenAgendaPicker={onOpenAgendaPicker}
                   onOpenFormulario={onOpenFormulario}
+                  timeZone={timeZone}
                   />
                 </div>
               </td>
@@ -1453,6 +1463,7 @@ function LeadsTableCell({
   resolveAgendaBadgeLabel,
   onOpenAgendaPicker,
   onOpenFormulario,
+  timeZone,
 }: {
   lead: Lead
   col: ColumnDef
@@ -1465,6 +1476,7 @@ function LeadsTableCell({
   resolveAgendaBadgeLabel: (raw: string | null | undefined) => string
   onOpenAgendaPicker: (lead: Lead) => void
   onOpenFormulario: (lead: Lead) => void
+  timeZone: string
 }) {
   /** Textos largos: mismo tratamiento en vista / edición (incluye reporte closer y similares). */
   const longTextCellKeys = ['dolores_setting', 'notes', 'closer_report', 'dolores_llamada', 'razon_compra']
@@ -1570,7 +1582,9 @@ function LeadsTableCell({
     }
     if (col.type === 'date') {
       if (!value) return <span className="text-[12px] text-[var(--text3)]">—</span>
-      const shown = formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
+      const shown = CALL_DATE_KEYS.has(col.key)
+        ? formatCallDateTime(String(value), timeZone) ?? formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
+        : formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
       return <span className="text-[12px] font-mono-num text-[var(--text2)]">{shown}</span>
     }
     if (col.type === 'number') {
@@ -1859,7 +1873,9 @@ function LeadsTableCell({
   // Date
   if (col.type === 'date') {
     if (!value) return <span onClick={onStartEdit} className={`${cellClass} text-[var(--text3)]`}>—</span>
-    const dateStr = formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
+    const dateStr = CALL_DATE_KEYS.has(col.key)
+      ? formatCallDateTime(String(value), timeZone) ?? formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
+      : formatIsoDateToDdMmYyyy(String(value)) ?? String(value)
     return (
       <span onClick={onStartEdit} className={`${cellClass} font-mono-num text-[var(--text2)]`}>
         {dateStr}

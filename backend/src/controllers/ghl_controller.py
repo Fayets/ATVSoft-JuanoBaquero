@@ -128,7 +128,11 @@ def _iter_contacts_with_appointments(
     calendar_id: str,
     month: str | None,
 ) -> Iterator[dict[str, Any]]:
-    """Pagina contactos, filtra los del calendario por attributions, y yield appointments."""
+    """Pagina contactos, filtra por calendario y yield *todos* los appointments del mes.
+
+    No hay break/return tras el primer appointment: cada event válido se emite
+    para que `_apply_appointment_to_lead` cree/actualice un lead por cita.
+    """
     month_start, month_end = _month_bounds_iso(month) if month else (None, None)
     start_after: str | None = None
     start_after_id: str | None = None
@@ -166,18 +170,26 @@ def _iter_contacts_with_appointments(
 
             time.sleep(_REQUEST_DELAY_S)
             appt_data = _ghl_get(client, token, f"/contacts/{contact_id}/appointments")
-            events = appt_data.get("events") or []
+            # GHL a veces usa "events", a veces "appointments"
+            events = appt_data.get("events") or appt_data.get("appointments") or []
+            if isinstance(events, dict):
+                events = events.get("events") or events.get("appointments") or []
+            if not isinstance(events, list):
+                events = []
 
             for event in events:
                 if not isinstance(event, dict):
                     continue
-                if event.get("calendarId") != calendar_id:
+                event_cal = str(event.get("calendarId") or event.get("calendar_id") or "")
+                if event_cal and event_cal != calendar_id:
                     continue
-                start_time_raw = str(event.get("startTime") or "")
+                start_time_raw = str(event.get("startTime") or event.get("start_time") or "")
                 if month_start and month_end:
                     if not (month_start <= start_time_raw <= month_end):
                         continue
-                status = str(event.get("appointmentStatus") or "").lower()
+                status = str(
+                    event.get("appointmentStatus") or event.get("status") or ""
+                ).lower()
                 if status in ("cancelled", "canceled"):
                     continue
                 total += 1
@@ -210,6 +222,17 @@ def _fetch_contacts_with_appointments(
 ) -> list[dict[str, Any]]:
     return list(_iter_contacts_with_appointments(client, token, location_id, calendar_id, month))
 
+def _ghl_appointment_id(event: dict[str, Any] | None) -> str:
+    if not isinstance(event, dict):
+        return ""
+    return str(
+        event.get("id")
+        or event.get("appointmentId")
+        or event.get("appointment_id")
+        or ""
+    ).strip()
+
+
 @db_session
 def _apply_appointment_to_lead(
     user_id: int,
@@ -222,23 +245,35 @@ def _apply_appointment_to_lead(
     ghl_contact_id: str,
     ig: str = "",
     formulario: dict[str, str] | None = None,
+    ghl_appointment_id: str = "",
 ) -> str:
-    """Upsert lead por email o ghl_contact_id. Returns 'created' o 'updated'."""
-    display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
+    """Upsert lead *por appointment* (no por contacto).
 
-    # Buscar lead existente por ghl_contact_id en notas
+    Un mismo contacto GHL con N citas del mes → N leads.
+    Re-sync: matchea por `GHL appointment_id` o por (contact_id + mismo call).
+    """
+    display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
+    appt_id = (ghl_appointment_id or "").strip()
+    contact_marker = f"GHL contact_id: {ghl_contact_id}" if ghl_contact_id else ""
+    appt_marker = f"GHL appointment_id: {appt_id}" if appt_id else ""
+
+    rows = list(Lead.select(lambda l: l.user_id == user_id))
     row: Lead | None = None
-    if ghl_contact_id:
-        for r in list(Lead.select(lambda l: l.user_id == user_id)):
-            if f"GHL contact_id: {ghl_contact_id}" in str(r.notas or ""):
+
+    # 1) Mismo appointment (re-sync idempotente)
+    if appt_marker:
+        for r in rows:
+            if appt_marker in str(r.notas or ""):
                 row = r
                 break
 
-    # Si no encontró por contact_id, buscar por email
-    if row is None and email:
-        email_key = email.strip().casefold()
-        for r in list(Lead.select(lambda l: l.user_id == user_id)):
-            if f"ghl email: {email_key}" in str(r.notas or "").casefold():
+    # 2) Mismo contacto + misma hora de call (sin appointment_id en datos viejos)
+    if row is None and contact_marker and call_at is not None:
+        for r in rows:
+            notas = str(r.notas or "")
+            if contact_marker not in notas:
+                continue
+            if r.call is not None and r.call.replace(tzinfo=None) == call_at.replace(tzinfo=None):
                 row = r
                 break
 
@@ -257,14 +292,28 @@ def _apply_appointment_to_lead(
             row.agendo = agendo_at
         row.status = "Agendado"
         row.agendo_en = "GHL"
+        # Asegurar markers en notas (migración suave)
+        notas = (row.notas or "").strip()
+        for marker in (contact_marker, appt_marker):
+            if marker and marker not in notas:
+                notas = f"{notas}\n{marker}".strip() if notas else marker
+        if email:
+            email_line = f"ghl email: {email.strip().casefold()}"
+            if email_line not in notas.casefold():
+                notas = f"{notas}\n{email_line}".strip() if notas else email_line
+        row.notas = notas
         if formulario:
             row.formulario = merge_formulario(row.formulario, formulario)
         return "updated"
 
-    # Crear nuevo lead con todos los campos requeridos
+    # 3) Nueva cita → nuevo lead (aunque el contacto ya exista con otras calls)
     notas_parts: list[str] = []
-    if ghl_contact_id:
-        notas_parts.append(f"GHL contact_id: {ghl_contact_id}")
+    if contact_marker:
+        notas_parts.append(contact_marker)
+    if appt_marker:
+        notas_parts.append(appt_marker)
+    if email:
+        notas_parts.append(f"ghl email: {email.strip().casefold()}")
 
     Lead(
         user_id=user_id,
@@ -323,8 +372,13 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
                 email = str(contact.get("email") or "").strip()
                 phone = str(contact.get("phone") or "").strip()
                 ghl_contact_id = str(contact.get("id") or "").strip()
-                call_at = _parse_ghl_datetime(appointment.get("startTime"))
-                agendo_at = _parse_ghl_datetime(appointment.get("dateAdded"))
+                call_at = _parse_ghl_datetime(
+                    appointment.get("startTime") or appointment.get("start_time")
+                )
+                agendo_at = _parse_ghl_datetime(
+                    appointment.get("dateAdded") or appointment.get("date_added")
+                )
+                ghl_appointment_id = _ghl_appointment_id(appointment)
                 try:
                     result = _apply_appointment_to_lead(
                         uid,
@@ -334,6 +388,7 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
                         call_at=call_at,
                         agendo_at=agendo_at,
                         ghl_contact_id=ghl_contact_id,
+                        ghl_appointment_id=ghl_appointment_id,
                     )
                     print(f"[ghl] lead {result}: {name}", flush=True)
                     if result == "created":
@@ -457,6 +512,14 @@ async def ghl_webhook(request: Request):
         print("[ghl webhook] no se encontró user con conexión GHL", flush=True)
         return {"status": "no_user"}
 
+    appt_body = body.get("appointment") if isinstance(body.get("appointment"), dict) else {}
+    ghl_appointment_id = (
+        _ghl_appointment_id(calendar_data if isinstance(calendar_data, dict) else None)
+        or _ghl_appointment_id(trigger_data if isinstance(trigger_data, dict) else None)
+        or _ghl_appointment_id(appt_body)
+        or str(body.get("appointmentId") or body.get("appointment_id") or "").strip()
+    )
+
     try:
         result = _apply_appointment_to_lead(
             uid,
@@ -468,6 +531,7 @@ async def ghl_webhook(request: Request):
             ghl_contact_id=contact_id,
             ig=ig,
             formulario=formulario,
+            ghl_appointment_id=ghl_appointment_id,
         )
         print(f"[ghl webhook] lead {result}: {name} ig={ig}", flush=True)
         return {"status": "ok", "action": result}

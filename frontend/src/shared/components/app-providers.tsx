@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from 'react'
 import { useMonth } from '@/shared/hooks/use-month'
+import { TimezoneProvider } from '@/shared/hooks/use-timezone'
 import { ToastProvider } from './toast'
 
 type MonthContextType = ReturnType<typeof useMonth>
@@ -20,7 +21,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <MonthContext.Provider value={monthState}>
       <ToastProvider>
-        {children}
+        <TimezoneProvider>{children}</TimezoneProvider>
       </ToastProvider>
     </MonthContext.Provider>
   )

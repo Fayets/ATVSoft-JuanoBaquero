@@ -17,7 +17,9 @@ import {
   STATUS_COLORS,
   STATUS_OPTIONS,
 } from '@/features/leads/types'
+import { useTimezone } from '@/shared/hooks/use-timezone'
 import { formatCash } from '@/shared/lib/format-utils'
+import { formatCallTime } from '@/shared/lib/timezone'
 import type { DailyCall } from '../types'
 import { buildCloserOptions } from '../services/daily-panel-service'
 
@@ -457,9 +459,13 @@ const DailyCallRow = memo(function DailyCallRow({
   onProgramOfferedChange,
   onProgramadaOfrecidoChange,
 }: RowProps) {
+  const { timeZone } = useTimezone()
+  const hora =
+    formatCallTime(row.call, timeZone) || row.hora || '—'
+
   return (
     <div className="neo-calls__row">
-      <div className="neo-calls__hora">{row.hora || '—'}</div>
+      <div className="neo-calls__hora">{hora}</div>
       <div className="neo-calls__lead" title={row.lead || 'Sin nombre'}>
         {row.lead || 'Sin nombre'}
       </div>

@@ -260,7 +260,7 @@ export function buildColumns(
     { key: 'formulario', label: 'Formulario', width: 110, type: 'text', editable: false, defaultVisible: true },
     // Fechas
     { key: 'agendo', label: 'Agendo', width: 120, type: 'date', editable: true, defaultVisible: true },
-    { key: 'scheduled_at', label: 'Call', width: 110, type: 'date', editable: true, defaultVisible: true },
+    { key: 'scheduled_at', label: 'Call', width: 150, type: 'date', editable: true, defaultVisible: true },
     { key: 'agendo_en', label: 'Agendó en', width: 120, type: 'select', editable: true, options: [...AGENDO_EN_OPTIONS], colors: AGENDO_EN_COLORS, defaultVisible: true },
     { key: 'call_at', label: 'Fecha call (alt.)', width: 110, type: 'date', editable: true, defaultVisible: false },
     // Setting (pre-llamada)

@@ -58,6 +58,7 @@ export function DailyPanelPage({
   const [programOptions, setProgramOptions] = useState<string[]>([''])
   const [defaultCloser, setDefaultCloser] = useState(DEFAULT_DAILY_CLOSER)
   const [loading, setLoading] = useState(true)
+  const [metaReady, setMetaReady] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [manualName, setManualName] = useState('')
   const [manualHora, setManualHora] = useState('')
@@ -65,12 +66,50 @@ export function DailyPanelPage({
   const [manualSaving, setManualSaving] = useState(false)
   const [generatingReport, setGeneratingReport] = useState(false)
 
+  // Closers / programas: una sola vez (no en cada cambio de fecha).
+  useEffect(() => {
+    if (!ready || !userId) {
+      setMetaReady(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const closers = await getTeamClosers().catch(() => [] as string[])
+        if (cancelled) return
+        const resolvedDefault = resolveDefaultCloser(closers)
+        setCloserOptions(closers)
+        setDefaultCloser(resolvedDefault)
+        setManualCloser((prev) => prev || resolvedDefault)
+        setMetaReady(true)
+      } catch {
+        if (!cancelled) {
+          setCloserOptions([])
+          setDefaultCloser('')
+          setMetaReady(true)
+        }
+      }
+      void getProgramOptions()
+        .then((opts) => {
+          if (!cancelled) setProgramOptions(opts)
+        })
+        .catch(() => {
+          if (!cancelled) setProgramOptions([''])
+        })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [ready, userId])
+
   const fetchCalls = useCallback(
     async (silent = false) => {
-      if (!ready || !userId) {
-        setCalls([])
-        setFecha('')
-        setLoading(false)
+      if (!ready || !userId || !metaReady) {
+        if (!ready || !userId) {
+          setCalls([])
+          setFecha('')
+          setLoading(false)
+        }
         return
       }
       if (isAdmin && !adminToken) {
@@ -79,22 +118,9 @@ export function DailyPanelPage({
       }
       if (!silent) setLoading(true)
       try {
-        let closers: string[] = []
-        try {
-          closers = await getTeamClosers()
-        } catch {
-          closers = []
-        }
-        const resolvedDefault = resolveDefaultCloser(closers)
-        setCloserOptions(closers)
-        setDefaultCloser(resolvedDefault)
-        setManualCloser((prev) => prev || resolvedDefault)
-        void getProgramOptions()
-          .then(setProgramOptions)
-          .catch(() => setProgramOptions(['']))
         const data = isAdmin
-          ? await getAdminDailyCalls(selectedDate, adminToken!, closers, resolvedDefault)
-          : await getDailyCalls(closers, resolvedDefault)
+          ? await getAdminDailyCalls(selectedDate, adminToken!, closerOptions, defaultCloser)
+          : await getDailyCalls(closerOptions, defaultCloser)
         setFecha(data.fecha)
         setCalls(data.llamadas)
       } catch (e) {
@@ -105,12 +131,23 @@ export function DailyPanelPage({
         if (!silent) setLoading(false)
       }
     },
-    [ready, userId, toast, isAdmin, adminToken, selectedDate],
+    [
+      ready,
+      userId,
+      toast,
+      isAdmin,
+      adminToken,
+      selectedDate,
+      metaReady,
+      closerOptions,
+      defaultCloser,
+    ],
   )
 
   useEffect(() => {
+    if (!metaReady) return
     void fetchCalls()
-  }, [fetchCalls])
+  }, [fetchCalls, metaReady])
 
   const handleStatusChange = useCallback(
     async (leadId: number, status: string) => {

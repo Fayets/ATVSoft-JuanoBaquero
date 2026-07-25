@@ -5,6 +5,7 @@ import type { DailyCall, DailyCallsResponse, ManualCallInput } from '../types'
 type ApiDailyCallRow = {
   id: number
   hora: string
+  call?: string | null
   lead: string
   closer?: string
   link_llamada?: string
@@ -85,6 +86,7 @@ export async function getDailyCalls(
     llamadas.push({
       id: row.id,
       hora: row.hora,
+      call: row.call?.trim() || null,
       lead: row.lead,
       closer: effective,
       call_link: row.link_llamada || row.call_link || '',
@@ -97,8 +99,9 @@ export async function getDailyCalls(
     })
   }
 
+  // No bloquear la carga del panel: persistir closers por defecto en background.
   if (patchCloser.length > 0) {
-    await Promise.all(
+    void Promise.all(
       patchCloser.map(({ id, closer }) => patchLeadCloser(id, closer).catch(() => undefined)),
     )
   }

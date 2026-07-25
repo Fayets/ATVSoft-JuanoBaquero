@@ -7,6 +7,7 @@ class AuthUser(db.Entity):
     id = PrimaryKey(int, auto=True)
     username = Required(str, unique=True)
     password_hash = Required(str)
+    timezone = Optional(str, default="America/Bogota")
     created_at = Required(datetime, default=lambda: datetime.utcnow())
     updated_at = Optional(datetime)
 

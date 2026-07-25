@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import { ThemeToggle } from '@/shared/components/theme-toggle'
+import { TimezoneSelector } from '@/shared/components/timezone-selector'
 
 const titles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -99,7 +100,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           </h1>
         )}
       </div>
-      <div className="flex flex-shrink-0 items-center">
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <TimezoneSelector />
         <ThemeToggle />
       </div>
     </header>

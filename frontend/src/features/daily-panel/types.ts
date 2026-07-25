@@ -1,6 +1,8 @@
 export type DailyCall = {
   id: number
   hora: string
+  /** ISO del slot call (UTC naive del backend) para formatear en timezone del usuario. */
+  call: string | null
   lead: string
   closer: string
   call_link: string

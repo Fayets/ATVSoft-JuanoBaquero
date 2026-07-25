@@ -683,6 +683,14 @@ class SyncSettingsPatch(BaseModel):
     )
 
 
+class UserSettingsOut(BaseModel):
+    timezone: str = "America/Bogota"
+
+
+class UserTimezonePut(BaseModel):
+    timezone: str = Field(..., min_length=1, max_length=64)
+
+
 class CallReportOut(BaseModel):
     id: str
     lead_id: str
@@ -886,6 +894,8 @@ class AgentLlamadaHoyItemOut(BaseModel):
     program_offered: str = ""
     programada_ofrecido_llamada: str = ""
     calificacion_llamada: str = ""
+    # ISO del slot `call` (UTC naive del backend) para formatear en timezone del cliente.
+    call: str | None = None
 
 
 class AgentLlamadasHoyOut(BaseModel):

@@ -1394,9 +1394,59 @@ def _migrate_postgres_weekly_report_feedback_marketing() -> None:
         conn.close()
 
 
+def _migrate_postgres_authuser_timezone() -> None:
+    """Columna timezone en authuser (default America/Bogota)."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND lower(table_name) = 'authuser'
+                """
+            )
+            tr = cur.fetchone()
+            if not tr:
+                return
+            physical = tr[0]
+            sql_table = f'"{physical}"' if physical != physical.lower() else physical
+            try:
+                cur.execute(
+                    f"ALTER TABLE {sql_table} ADD COLUMN IF NOT EXISTS "
+                    f"timezone VARCHAR(64) DEFAULT 'America/Bogota'"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    f"UPDATE {sql_table} SET timezone = 'America/Bogota' "
+                    f"WHERE timezone IS NULL OR TRIM(timezone) = ''"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
+    _migrate_postgres_authuser_timezone()
     _migrate_postgres_lead_call_to_timestamp()
     _migrate_postgres_lead_agendo_to_timestamp()
     _migrate_postgres_drop_pago_en_llamada()

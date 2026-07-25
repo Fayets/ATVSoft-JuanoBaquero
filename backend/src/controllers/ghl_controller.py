@@ -265,10 +265,7 @@ def _iter_contacts_with_appointments(
 
         contact = _get_contact_cached(client, token, contact_id, contact_cache)
         kept += 1
-        name = (
-            str(contact.get("contactName") or "").strip()
-            or f"{contact.get('firstName') or ''} {contact.get('lastName') or ''}".strip()
-        )
+        name = _ghl_contact_display_name(contact)
         print(f"[ghl] appointment encontrado: {name or contact_id} {start_time_raw}", flush=True)
         yield {
             "contact": contact,
@@ -304,6 +301,24 @@ def _ghl_appointment_id(event: dict[str, Any] | None) -> str:
         or event.get("appointment_id")
         or ""
     ).strip()
+
+
+def _ghl_contact_display_name(data: dict[str, Any] | None) -> str:
+    """Mismo orden que el webhook: full_name → name → firstName + lastName."""
+    if not isinstance(data, dict):
+        return ""
+    full = str(
+        data.get("full_name")
+        or data.get("fullName")
+        or data.get("name")
+        or data.get("Nombre y apellido")
+        or ""
+    ).strip()
+    if full:
+        return full
+    first = str(data.get("firstName") or data.get("first_name") or "").strip()
+    last = str(data.get("lastName") or data.get("last_name") or "").strip()
+    return f"{first} {last}".strip()
 
 
 @db_session
@@ -447,7 +462,7 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
             for item in items:
                 contact = item["contact"]
                 appointment = item["appointment"]
-                name = str(contact.get("contactName") or contact.get("firstName") or "").strip()
+                name = _ghl_contact_display_name(contact)
                 email = str(contact.get("email") or "").strip()
                 phone = str(contact.get("phone") or "").strip()
                 ghl_contact_id = str(contact.get("id") or "").strip()
@@ -510,13 +525,7 @@ async def ghl_webhook(request: Request):
 
     # Datos del contacto → columnas existentes
     contact_id = str(body.get("contact_id") or body.get("contactId") or "").strip()
-    name = str(
-        body.get("full_name")
-        or body.get("name")
-        or body.get("Nombre y apellido")
-        or body.get("first_name")
-        or ""
-    ).strip()
+    name = _ghl_contact_display_name(body if isinstance(body, dict) else None)
     email = str(
         body.get("email")
         or body.get("Correo electrónico")

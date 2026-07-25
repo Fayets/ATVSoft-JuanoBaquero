@@ -4,8 +4,9 @@ import calendar
 import time
 import traceback
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
@@ -21,9 +22,9 @@ router = APIRouter(prefix="/ghl", tags=["ghl"], redirect_slashes=False)
 
 _GHL_API = "https://services.leadconnectorhq.com"
 _GHL_VERSION = "2021-07-28"
-_PAGE_SIZE = 100
-_MAX_CONTACT_PAGES = 50
 _REQUEST_DELAY_S = 0.2
+# GHL manda startTime naive en hora del calendar location (Colombia).
+_GHL_NAIVE_TZ = ZoneInfo("America/Bogota")
 
 class GHLSyncRequest(BaseModel):
     month: str | None = Field(default=None, description="YYYY-MM opcional para filtrar appointments")
@@ -44,22 +45,41 @@ def _uid_int(user_id: str) -> int:
     except ValueError:
         raise HTTPException(status_code=400, detail="X-User-Id debe ser numérico.")
 
-def _month_bounds_iso(month: str) -> tuple[str, str]:
-    """Devuelve (start_iso, end_iso) para filtrar por mes."""
+def _parse_month(month: str) -> tuple[int, int]:
     try:
         year, mon = int(month[:4]), int(month[5:7])
     except (ValueError, IndexError):
         raise HTTPException(status_code=400, detail="month debe tener formato YYYY-MM.")
+    if mon < 1 or mon > 12:
+        raise HTTPException(status_code=400, detail="month debe tener formato YYYY-MM.")
+    return year, mon
+
+def _month_bounds_ms(month: str) -> tuple[int, int]:
+    """Inicio/fin del mes en America/Bogota → epoch ms (requerido por /calendars/events)."""
+    year, mon = _parse_month(month)
     last_day = calendar.monthrange(year, mon)[1]
-    start = f"{year:04d}-{mon:02d}-01 00:00:00"
-    end = f"{year:04d}-{mon:02d}-{last_day:02d} 23:59:59"
-    return start, end
+    start = datetime(year, mon, 1, 0, 0, 0, tzinfo=_GHL_NAIVE_TZ)
+    end = datetime(year, mon, last_day, 23, 59, 59, 999000, tzinfo=_GHL_NAIVE_TZ)
+    return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+
+def _start_time_in_month(start_time_raw: str, month: str) -> bool:
+    """True si startTime cae en YYYY-MM según calendario Colombia (no comparación de strings)."""
+    dt_utc = _parse_ghl_datetime(start_time_raw)
+    if dt_utc is None:
+        return False
+    local = dt_utc.replace(tzinfo=timezone.utc).astimezone(_GHL_NAIVE_TZ)
+    return f"{local.year:04d}-{local.month:02d}" == month
 
 def _parse_ghl_datetime(raw: str | None) -> datetime | None:
-    """Normaliza startTime GHL a UTC naive (sin doble offset en el cliente)."""
+    """Normaliza startTime GHL → UTC naive para guardar en BD.
+
+    - Con `Z` / offset → se convierte a UTC.
+    - Sin timezone (ej. `2026-07-24T12:00:00`) → se asume America/Bogota
+      (hora del calendario GHL en Colombia) y recién ahí se pasa a UTC.
+      Así `12:00` Colombia → `17:00` UTC, no `12:00` UTC.
+    """
     if not raw:
         return None
-    from datetime import timezone
 
     s = str(raw).strip()
     if not s:
@@ -80,8 +100,9 @@ def _parse_ghl_datetime(raw: str | None) -> datetime | None:
         return None
     if dt.tzinfo is not None:
         return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    # Naive: GHL/LeadConnector suele mandar UTC sin sufijo
-    return dt
+    # Naive = wall-clock Colombia → UTC
+    localized = dt.replace(tzinfo=_GHL_NAIVE_TZ)
+    return localized.astimezone(timezone.utc).replace(tzinfo=None)
 
 def _ghl_get(
     client: httpx.Client,
@@ -139,6 +160,30 @@ def _ghl_get(
         ) from last_exc
     raise HTTPException(status_code=502, detail=f"No se pudo contactar a GHL: {last_exc!s}")
 
+def _extract_events_list(payload: dict[str, Any]) -> list[Any]:
+    events = payload.get("events") or payload.get("appointments") or []
+    if isinstance(events, dict):
+        events = events.get("events") or events.get("appointments") or []
+    return events if isinstance(events, list) else []
+
+
+def _get_contact_cached(
+    client: httpx.Client,
+    token: str,
+    contact_id: str,
+    cache: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if contact_id in cache:
+        return cache[contact_id]
+    time.sleep(_REQUEST_DELAY_S)
+    data = _ghl_get(client, token, f"/contacts/{contact_id}")
+    contact = data.get("contact") if isinstance(data.get("contact"), dict) else data
+    if not isinstance(contact, dict):
+        contact = {"id": contact_id}
+    cache[contact_id] = contact
+    return contact
+
+
 def _iter_contacts_with_appointments(
     client: httpx.Client,
     token: str,
@@ -146,89 +191,99 @@ def _iter_contacts_with_appointments(
     calendar_id: str,
     month: str | None,
 ) -> Iterator[dict[str, Any]]:
-    """Pagina contactos, filtra por calendario y yield *todos* los appointments del mes.
+    """Lista appointments del calendario vía GET /calendars/events (rango en ms).
 
-    No hay break/return tras el primer appointment: cada event válido se emite
-    para que `_apply_appointment_to_lead` cree/actualice un lead por cita.
+    Antes se paginaban todos los contactos + /contacts/{id}/appointments filtrando
+    por attributions.mediumId == calendar_id; eso descartaba casi todo y además
+    comparaba startTime con bounds string (`YYYY-MM-DD HH:MM:SS` vs `T`/Z),
+    lo que podía filtrar citas válidas en silencio.
     """
-    month_start, month_end = _month_bounds_iso(month) if month else (None, None)
-    start_after: str | None = None
-    start_after_id: str | None = None
-    page = 0
-    total = 0
+    if not month:
+        now = datetime.now(_GHL_NAIVE_TZ)
+        month = f"{now.year:04d}-{now.month:02d}"
 
-    while page < _MAX_CONTACT_PAGES:
-        page += 1
-        params: dict[str, Any] = {
+    start_ms, end_ms = _month_bounds_ms(month)
+    print(
+        f"[ghl] /calendars/events location={location_id} calendar={calendar_id} "
+        f"month={month} startMs={start_ms} endMs={end_ms}",
+        flush=True,
+    )
+
+    data = _ghl_get(
+        client,
+        token,
+        "/calendars/events",
+        params={
             "locationId": location_id,
-            "limit": _PAGE_SIZE,
+            "calendarId": calendar_id,
+            "startTime": start_ms,
+            "endTime": end_ms,
+        },
+    )
+    events = _extract_events_list(data)
+    raw_total = len(events)
+    print(f"[ghl] events crudos de API (antes de filtros): {raw_total} keys={list(data.keys())}", flush=True)
+
+    skipped_cal = 0
+    skipped_month = 0
+    skipped_cancelled = 0
+    skipped_no_contact = 0
+    kept = 0
+    contact_cache: dict[str, dict[str, Any]] = {}
+    sample_start: str | None = None
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        start_time_raw = str(event.get("startTime") or event.get("start_time") or "")
+        if sample_start is None and start_time_raw:
+            sample_start = start_time_raw
+            print(f"[ghl] sample startTime={start_time_raw!r}", flush=True)
+
+        event_cal = str(event.get("calendarId") or event.get("calendar_id") or "")
+        if event_cal and event_cal != calendar_id:
+            skipped_cal += 1
+            continue
+
+        # Contador "antes del filtro de mes" = todos los que pasaron calendar.
+        # El API ya filtra por rango ms; esto valida parsing local y descarta outliers.
+        if not _start_time_in_month(start_time_raw, month):
+            skipped_month += 1
+            continue
+
+        status = str(
+            event.get("appointmentStatus") or event.get("status") or ""
+        ).lower()
+        if status in ("cancelled", "canceled"):
+            skipped_cancelled += 1
+            continue
+
+        contact_id = str(event.get("contactId") or event.get("contact_id") or "").strip()
+        if not contact_id:
+            skipped_no_contact += 1
+            continue
+
+        contact = _get_contact_cached(client, token, contact_id, contact_cache)
+        kept += 1
+        name = (
+            str(contact.get("contactName") or "").strip()
+            or f"{contact.get('firstName') or ''} {contact.get('lastName') or ''}".strip()
+        )
+        print(f"[ghl] appointment encontrado: {name or contact_id} {start_time_raw}", flush=True)
+        yield {
+            "contact": contact,
+            "appointment": event,
         }
-        if start_after:
-            params["startAfter"] = start_after
-        if start_after_id:
-            params["startAfterId"] = start_after_id
 
-        data = _ghl_get(client, token, "/contacts/", params=params)
-        contacts = data.get("contacts") or []
-        print(f"[ghl] página {page}: {len(contacts)} contactos", flush=True)
-
-        for contact in contacts:
-            contact_id = contact.get("id")
-            if not contact_id:
-                continue
-
-            attributions = contact.get("attributions") or []
-            came_from_calendar = any(
-                str(a.get("mediumId") or "") == calendar_id
-                for a in attributions
-                if isinstance(a, dict)
-            )
-            if not came_from_calendar:
-                continue
-
-            time.sleep(_REQUEST_DELAY_S)
-            appt_data = _ghl_get(client, token, f"/contacts/{contact_id}/appointments")
-            # GHL a veces usa "events", a veces "appointments"
-            events = appt_data.get("events") or appt_data.get("appointments") or []
-            if isinstance(events, dict):
-                events = events.get("events") or events.get("appointments") or []
-            if not isinstance(events, list):
-                events = []
-
-            for event in events:
-                if not isinstance(event, dict):
-                    continue
-                event_cal = str(event.get("calendarId") or event.get("calendar_id") or "")
-                if event_cal and event_cal != calendar_id:
-                    continue
-                start_time_raw = str(event.get("startTime") or event.get("start_time") or "")
-                if month_start and month_end:
-                    if not (month_start <= start_time_raw <= month_end):
-                        continue
-                status = str(
-                    event.get("appointmentStatus") or event.get("status") or ""
-                ).lower()
-                if status in ("cancelled", "canceled"):
-                    continue
-                total += 1
-                print(
-                    f"[ghl] appointment encontrado: {contact.get('contactName')} {start_time_raw}",
-                    flush=True,
-                )
-                yield {
-                    "contact": contact,
-                    "appointment": event,
-                }
-
-        meta = data.get("meta") or {}
-        next_page = meta.get("nextPage")
-        if not next_page:
-            print(f"[ghl] fin de paginación en página {page}", flush=True)
-            break
-        start_after = str(meta.get("startAfter") or "")
-        start_after_id = str(meta.get("startAfterId") or "")
-
-    print(f"[ghl] total appointments a importar: {total}", flush=True)
+    after_calendar = raw_total - skipped_cal
+    after_month = after_calendar - skipped_month
+    print(
+        f"[ghl] filtro mes: antes={after_calendar} después={after_month} "
+        f"(skipped_month={skipped_month} skipped_cal={skipped_cal} "
+        f"skipped_cancelled={skipped_cancelled} skipped_no_contact={skipped_no_contact})",
+        flush=True,
+    )
+    print(f"[ghl] total appointments a importar: {kept}", flush=True)
 
 
 def _fetch_contacts_with_appointments(

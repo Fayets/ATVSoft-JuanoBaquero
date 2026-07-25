@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pony
+psycopg2-binary
+python-decouple
+pydantic
+certifi
+apscheduler
+httpx
+python-jose[cryptography]
+bcrypt
+python-multipart
+fpdf2

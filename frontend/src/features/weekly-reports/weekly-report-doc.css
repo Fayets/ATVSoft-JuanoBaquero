@@ -1,0 +1,219 @@
+.weekly-report-doc {
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  overflow: hidden;
+}
+
+.weekly-report-doc__header {
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border2);
+}
+
+.weekly-report-doc__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.weekly-report-doc__period {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text3);
+}
+
+.weekly-report-doc__period::after {
+  content: '';
+  display: block;
+  width: 2.75rem;
+  height: 2px;
+  margin-top: 0.65rem;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.weekly-report-doc__body {
+  padding: 1rem 1.5rem 1.5rem;
+  max-height: min(72vh, 780px);
+  overflow-y: auto;
+}
+
+.weekly-report-doc__section {
+  margin: 1.35rem 0 0.65rem;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.weekly-report-doc__section:first-child {
+  margin-top: 0;
+}
+
+.weekly-report-doc__section::after {
+  content: '';
+  display: block;
+  width: 1.75rem;
+  height: 2px;
+  margin-top: 0.35rem;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.weekly-report-doc__subsection {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e57373;
+}
+
+.weekly-report-doc__bullet,
+.weekly-report-doc__numbered,
+.weekly-report-doc__paragraph {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text2);
+}
+
+.weekly-report-doc__bullet {
+  display: flex;
+  gap: 0.5rem;
+  padding-left: 0.15rem;
+}
+
+.weekly-report-doc__bullet-dot {
+  flex-shrink: 0;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.weekly-report-doc__numbered {
+  display: flex;
+  gap: 0.4rem;
+  padding-left: 0.15rem;
+}
+
+.weekly-report-doc__numbered-index {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text3);
+}
+
+.weekly-report-doc__metrics-table-wrap {
+  margin: 0.35rem 0 0.75rem;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.weekly-report-doc__metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.weekly-report-doc__metrics-table th,
+.weekly-report-doc__metrics-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border2);
+}
+
+.weekly-report-doc__metrics-table tr:last-child th,
+.weekly-report-doc__metrics-table tr:last-child td {
+  border-bottom: none;
+}
+
+.weekly-report-doc__metrics-table th {
+  width: 38%;
+  font-weight: 600;
+  color: var(--text3);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.weekly-report-doc__metrics-table td {
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.weekly-report-doc__spacer {
+  height: 0.5rem;
+}
+
+.weekly-report-marketing {
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(230, 57, 70, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+}
+
+.weekly-report-marketing__head {
+  margin-bottom: 0.75rem;
+}
+
+.weekly-report-marketing__badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(230, 57, 70, 0.15);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ff8a94;
+}
+
+.weekly-report-marketing__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.weekly-report-marketing__subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text3);
+}
+
+.weekly-report-marketing__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text2);
+}
+
+.weekly-report-marketing__list li + li {
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 640px) {
+  .weekly-report-doc__metrics-table th,
+  .weekly-report-doc__metrics-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .weekly-report-doc__metrics-table th {
+    padding-bottom: 0.15rem;
+    border-bottom: none;
+  }
+
+  .weekly-report-doc__metrics-table td {
+    padding-top: 0;
+  }
+}

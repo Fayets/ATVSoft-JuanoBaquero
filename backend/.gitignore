@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.sqlite
+
+# Historias / imágenes generadas en el servidor (no versionar)
+media/**
+!media/.gitkeep
+!media/stories/
+media/stories/**
+!media/stories/.gitkeep

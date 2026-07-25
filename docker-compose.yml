@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: atv-mkt-backend
+    restart: always
+    ports:
+      - "8001:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - /opt/atv-mkt/media/stories:/app/media/stories
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_BACKEND_URL=http://72.60.244.220:8001
+    container_name: atv-mkt-frontend
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://IP_DEL_VPS:8001
+    depends_on:
+      - backend

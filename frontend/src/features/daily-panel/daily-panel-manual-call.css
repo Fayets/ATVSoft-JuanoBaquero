@@ -1,0 +1,86 @@
+
+.neo-manual-call {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.neo-manual-call__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.neo-manual-call__card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 24rem);
+  border-radius: 4px;
+  border: 1px solid rgba(230, 57, 70, 0.35);
+  background: rgba(16, 10, 12, 0.98);
+  padding: 1.25rem;
+  box-shadow:
+    0 0 0 1px rgba(230, 57, 70, 0.06) inset,
+    0 20px 50px rgba(0, 0, 0, 0.55),
+    0 0 40px rgba(230, 57, 70, 0.08);
+}
+
+.neo-manual-call__title {
+  margin: 0 0 0.35rem;
+  font-family: var(--neo-mono), monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fafafa;
+}
+
+.neo-manual-call__hint {
+  margin: 0 0 1rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: #a1a1aa;
+}
+
+.neo-manual-call__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fca5a5;
+}
+
+.neo-manual-call__field input,
+.neo-manual-call__field select {
+  border: 1px solid rgba(230, 57, 70, 0.25);
+  border-radius: 4px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.875rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  color: #fafafa;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.neo-manual-call__field input:focus,
+.neo-manual-call__field select:focus {
+  outline: none;
+  border-color: #e63946;
+  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.15);
+}
+
+.neo-manual-call__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

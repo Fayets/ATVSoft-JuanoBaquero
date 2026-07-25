@@ -1,0 +1,212 @@
+{
+  "corrected_at": "2026-07-23T14:45:34.240621+00:00",
+  "source": "Corrección manual closer Nick Xanders — mensaje jul 2026",
+  "member_id": 2,
+  "entries": [
+    {
+      "fecha": "2026-07-13",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 138,
+        "fecha": "2026-07-13",
+        "member_id": 2,
+        "llamadas_agendadas": 3,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 2,
+        "ingreso": 0.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 138,
+        "fecha": "2026-07-13",
+        "member_id": 2,
+        "llamadas_agendadas": 3,
+        "shows": 3,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 2,
+        "ingreso": 0.0,
+        "notas": "[backup auto 2026-07-09] llamadas=3, shows=0, cierres=0, calificados=1, descalificados=2, ingreso=0.0"
+      }
+    },
+    {
+      "fecha": "2026-07-14",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 139,
+        "fecha": "2026-07-14",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 0,
+        "descalificados": 2,
+        "ingreso": 0.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 139,
+        "fecha": "2026-07-14",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 2,
+        "cierres": 0,
+        "calificados": 0,
+        "descalificados": 2,
+        "ingreso": 0.0,
+        "notas": "[backup auto 2026-07-09] llamadas=2, shows=0, cierres=0, calificados=0, descalificados=2, ingreso=0.0"
+      }
+    },
+    {
+      "fecha": "2026-07-15",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 140,
+        "fecha": "2026-07-15",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 1,
+        "ingreso": 0.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 140,
+        "fecha": "2026-07-15",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 2,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 1,
+        "ingreso": 0.0,
+        "notas": "[backup auto 2026-07-09] llamadas=2, shows=0, cierres=0, calificados=1, descalificados=1, ingreso=0.0"
+      }
+    },
+    {
+      "fecha": "2026-07-16",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 141,
+        "fecha": "2026-07-16",
+        "member_id": 2,
+        "llamadas_agendadas": 4,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 0,
+        "descalificados": 4,
+        "ingreso": 0.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 141,
+        "fecha": "2026-07-16",
+        "member_id": 2,
+        "llamadas_agendadas": 4,
+        "shows": 1,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 4,
+        "ingreso": 0.0,
+        "notas": "[backup auto 2026-07-09] llamadas=4, shows=0, cierres=0, calificados=0, descalificados=4, ingreso=0.0"
+      }
+    },
+    {
+      "fecha": "2026-07-18",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 142,
+        "fecha": "2026-07-18",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 2,
+        "descalificados": -1,
+        "ingreso": 0.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 142,
+        "fecha": "2026-07-18",
+        "member_id": 2,
+        "llamadas_agendadas": 2,
+        "shows": 2,
+        "cierres": 0,
+        "calificados": 2,
+        "descalificados": 0,
+        "ingreso": 0.0,
+        "notas": "[backup auto 2026-07-09] llamadas=2, shows=0, cierres=0, calificados=2, descalificados=-1, ingreso=0.0"
+      }
+    },
+    {
+      "fecha": "2026-07-20",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 143,
+        "fecha": "2026-07-20",
+        "member_id": 2,
+        "llamadas_agendadas": 1,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 0,
+        "ingreso": 15000.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 143,
+        "fecha": "2026-07-20",
+        "member_id": 2,
+        "llamadas_agendadas": 1,
+        "shows": 1,
+        "cierres": 1,
+        "calificados": 1,
+        "descalificados": 0,
+        "ingreso": 15000.0,
+        "notas": "[backup auto 2026-07-09] llamadas=1, shows=0, cierres=0, calificados=1, descalificados=0, ingreso=15000.0"
+      }
+    },
+    {
+      "fecha": "2026-07-22",
+      "status": "updated",
+      "member": "Nick Xanders",
+      "before": {
+        "id": 144,
+        "fecha": "2026-07-22",
+        "member_id": 2,
+        "llamadas_agendadas": 1,
+        "shows": 0,
+        "cierres": 0,
+        "calificados": 1,
+        "descalificados": 0,
+        "ingreso": 5000.0,
+        "notas": ""
+      },
+      "after": {
+        "id": 144,
+        "fecha": "2026-07-22",
+        "member_id": 2,
+        "llamadas_agendadas": 1,
+        "shows": 1,
+        "cierres": 1,
+        "calificados": 1,
+        "descalificados": 0,
+        "ingreso": 5000.0,
+        "notas": "[backup auto 2026-07-09] llamadas=1, shows=0, cierres=0, calificados=1, descalificados=0, ingreso=5000.0"
+      }
+    }
+  ],
+  "updated_count": 7,
+  "skipped_count": 0
+}

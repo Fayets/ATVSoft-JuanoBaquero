@@ -320,56 +320,64 @@ def _apply_appointment_to_lead(
     formulario: dict[str, str] | None = None,
     ghl_appointment_id: str = "",
 ) -> str:
-    """Upsert lead *por appointment* (no por contacto).
+    """Upsert lead por `ghl_appointment_id` (event.id de /calendars/events).
 
-    Un mismo contacto GHL con N citas del mes → N leads.
-    Re-sync: matchea por `GHL appointment_id` o por (contact_id + mismo call).
+    Si ya existe → actualiza call/nombre (y datos de contacto).
+    Si no → crea un lead nuevo. Un contacto con N citas → N leads.
     """
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
     appt_id = (ghl_appointment_id or "").strip()
     contact_marker = f"GHL contact_id: {ghl_contact_id}" if ghl_contact_id else ""
-    appt_marker = f"GHL appointment_id: {appt_id}" if appt_id else ""
 
-    rows = list(Lead.select(lambda l: l.user_id == user_id))
     row: Lead | None = None
 
-    # 1) Mismo appointment (re-sync idempotente)
-    if appt_marker:
-        for r in rows:
-            if appt_marker in str(r.notas or ""):
+    # 1) Columna ghl_appointment_id (fuente de verdad)
+    if appt_id:
+        row = Lead.get(user_id=user_id, ghl_appointment_id=appt_id)
+
+    # Fallbacks solo si hace falta (leads viejos sin columna)
+    if row is None and (appt_id or (ghl_contact_id and call_at is not None)):
+        appt_marker = f"GHL appointment_id: {appt_id}" if appt_id else ""
+        call_naive = call_at.replace(tzinfo=None) if call_at is not None else None
+        for r in Lead.select(lambda l: l.user_id == user_id):
+            notas = str(r.notas or "")
+            # 2) Id guardado solo en notas
+            if appt_marker and appt_marker in notas:
                 row = r
                 break
-
-    # 2) Mismo contacto + misma hora de call (sin appointment_id en datos viejos)
-    if row is None and contact_marker and call_at is not None:
-        for r in rows:
-            notas = str(r.notas or "")
-            if contact_marker not in notas:
-                continue
-            if r.call is not None and r.call.replace(tzinfo=None) == call_at.replace(tzinfo=None):
+            # 3) Mismo contacto + misma hora
+            if (
+                row is None
+                and contact_marker
+                and contact_marker in notas
+                and call_naive is not None
+                and r.call is not None
+                and r.call.replace(tzinfo=None) == call_naive
+            ):
                 row = r
                 break
 
     if row is not None:
         if display_name:
             row.nombre = display_name
+        if call_at is not None:
+            row.call = call_at
+        if appt_id:
+            row.ghl_appointment_id = appt_id
         if email:
             row.email = email
         if phone:
             row.telefono = phone
         if ig:
             row.ig = ig
-        if call_at is not None:
-            row.call = call_at
         if agendo_at is not None:
             row.agendo = agendo_at
         row.status = "Agendado"
         row.agendo_en = "GHL"
-        # Asegurar markers en notas (migración suave)
+        row.origen = row.origen or "GHL"
         notas = (row.notas or "").strip()
-        for marker in (contact_marker, appt_marker):
-            if marker and marker not in notas:
-                notas = f"{notas}\n{marker}".strip() if notas else marker
+        if contact_marker and contact_marker not in notas:
+            notas = f"{notas}\n{contact_marker}".strip() if notas else contact_marker
         if email:
             email_line = f"ghl email: {email.strip().casefold()}"
             if email_line not in notas.casefold():
@@ -379,12 +387,9 @@ def _apply_appointment_to_lead(
             row.formulario = merge_formulario(row.formulario, formulario)
         return "updated"
 
-    # 3) Nueva cita → nuevo lead (aunque el contacto ya exista con otras calls)
     notas_parts: list[str] = []
     if contact_marker:
         notas_parts.append(contact_marker)
-    if appt_marker:
-        notas_parts.append(appt_marker)
     if email:
         notas_parts.append(f"ghl email: {email.strip().casefold()}")
 
@@ -395,6 +400,7 @@ def _apply_appointment_to_lead(
         telefono=phone or "",
         ig=ig or "",
         origen="GHL",
+        ghl_appointment_id=appt_id or None,
         notas="\n".join(notas_parts),
         call=call_at,
         agendo=agendo_at or call_at,

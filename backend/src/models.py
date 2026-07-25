@@ -175,6 +175,8 @@ class Lead(db.Entity):
     agendo = Optional(datetime)
     agendo_en = Optional(str)
     call = Optional(datetime)
+    # Id del evento GHL (/calendars/events → event.id). Upsert idempotente del sync.
+    ghl_appointment_id = Optional(str)
     # Formulario GHL calendar (7 preguntas de calificación; contacto va en nombre/ig/email/telefono)
     formulario = Optional(Json, default=lambda: {})
     link_llamada = Optional(str, default="")

@@ -1443,6 +1443,56 @@ def _migrate_postgres_authuser_timezone() -> None:
         conn.close()
 
 
+def _migrate_postgres_lead_ghl_appointment_id() -> None:
+    """Columna ghl_appointment_id en lead (+ índice único parcial por user)."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND lower(table_name) = 'lead'
+                """
+            )
+            tr = cur.fetchone()
+            if not tr:
+                return
+            physical = tr[0]
+            sql_table = f'"{physical}"' if physical != physical.lower() else physical
+            try:
+                cur.execute(
+                    f"ALTER TABLE {sql_table} ADD COLUMN IF NOT EXISTS "
+                    f"ghl_appointment_id VARCHAR"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS lead_user_ghl_appointment_id_uidx "
+                    f"ON {sql_table} (user_id, ghl_appointment_id) "
+                    f"WHERE ghl_appointment_id IS NOT NULL AND TRIM(ghl_appointment_id) <> ''"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
@@ -1472,6 +1522,7 @@ def init_db() -> None:
     _migrate_postgres_weekly_report_feedback_marketing()
     _migrate_postgres_lead_formulario_drop_embudo_fields()
     _migrate_postgres_drop_lead_ingresos()
+    _migrate_postgres_lead_ghl_appointment_id()
     db.generate_mapping(create_tables=True)
     _migrate_agendo_en_iso_to_call()
     _migrate_agendo_en_default_chat_when_agendado()

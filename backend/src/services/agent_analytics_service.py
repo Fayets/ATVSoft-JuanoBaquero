@@ -115,7 +115,7 @@ def _lead_facturacion_usd(
 
     if not prog:
         if not catalog_defined and api_price is None:
-            return float(row.pago or 0) or float(row.ingresos_lead or 0)
+            return float(row.pago or 0)
         return 0.0
 
     if api_price is not None:
@@ -125,7 +125,7 @@ def _lead_facturacion_usd(
     for k, v in program_prices.items():
         if _norm_program_key(k) == nk:
             return float(v)
-    return float(row.ingresos_lead or 0)
+    return float(row.pago or 0)
 
 
 def _load_team_reports(user_id: int, start: date, end: date) -> tuple[list[_DailyReportRow], list[_DailyReportRow]]:

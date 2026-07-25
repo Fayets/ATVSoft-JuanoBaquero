@@ -307,16 +307,6 @@ def _qna_answer_at_position(qna: list, position: int) -> str | None:
     return None
 
 
-def _ingresos_lead_from_qna_answer(raw: str | None) -> float | None:
-    if raw is None or not str(raw).strip():
-        return None
-    s = str(raw).strip().replace(",", ".").replace("$", "")
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
 def _merge_calendly_email_notas(existing: str | None, email: str) -> str:
     line = f"Calendly email: {email}"
     base = (existing or "").strip()
@@ -359,15 +349,6 @@ def _extract_calendly_form_fields(flat: dict, inner: dict | None = None) -> dict
     )
     return {
         "phone": phone,
-        "ingresos_rango": _find_calendly_answer(
-            qa,
-            "con cuánto dinero",
-            "con cuanto dinero",
-            "cuánto dinero cuentas",
-            "cuanto dinero cuentas",
-            "inversión tanto de tiempo",
-            "inversion tanto de tiempo",
-        ),
         "compromiso": _find_calendly_answer(qa, "comprometidas", "realmente comprometidas"),
     }
 
@@ -376,9 +357,6 @@ def _apply_calendly_form_fields(row: Lead, fields: dict[str, str]) -> None:
     phone = (fields.get("phone") or "").strip()
     if phone:
         row.telefono = phone
-    ingresos = (fields.get("ingresos_rango") or "").strip()
-    if ingresos:
-        row.ingresos_rango = ingresos
     compromiso = (fields.get("compromiso") or "").strip()
     if compromiso:
         marker = f"Compromiso Calendly: {compromiso}"
@@ -433,8 +411,6 @@ async def calendly_webhook(request: Request) -> dict[str, str]:
     telefono_q = _qna_answer_at_position(qna, 0)
     ig_q = _qna_answer_at_position(qna, 1)
     avatar_q = _qna_answer_at_position(qna, 2)
-    ingresos_raw = _qna_answer_at_position(qna, 3)
-    ingresos_lead_val = _ingresos_lead_from_qna_answer(ingresos_raw)
 
     display_name = _sanitize_webhook_display_name(
         str(inner_payload.get("name") or flat.get("name") or ""),
@@ -496,8 +472,6 @@ async def calendly_webhook(request: Request) -> dict[str, str]:
                 row.ig = ig_hint
             if avatar_val:
                 row.avatar = avatar_val
-            if ingresos_lead_val is not None:
-                row.ingresos_lead = ingresos_lead_val
             _apply_calendly_form_fields(row, form_fields)
         else:
             notas_parts = []
@@ -512,7 +486,6 @@ async def calendly_webhook(request: Request) -> dict[str, str]:
                 telefono=telefono or "",
                 avatar=avatar_val or "",
                 email=email or "",
-                ingresos_lead=ingresos_lead_val if ingresos_lead_val is not None else 0,
                 agendo=form_completed_at,
                 call=start_dt,
                 agendo_en="Chat",

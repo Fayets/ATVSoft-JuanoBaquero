@@ -1,6 +1,16 @@
 'use client'
 
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react'
+
+const PAGE_SIZE = 30
 import {
   canonicalLeadStatus,
   PROGRAM_COLORS,
@@ -43,21 +53,21 @@ function programSelectOptions(programOptions: string[], current: string): string
   })
 }
 
-function ProgramSelect({
+const ProgramSelect = memo(function ProgramSelect({
   leadId,
   value,
-  programOptions,
+  options,
   label,
   onChange,
 }: {
   leadId: number
   value: string
-  programOptions: string[]
+  options: string[]
   label: string
   onChange: (leadId: number, program: string) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
-  const options = programSelectOptions(programOptions, value)
+  const merged = useMemo(() => programSelectOptions(options, value), [options, value])
   const current = value.trim()
   const color = current ? PROGRAM_COLORS[current] || '#c084fc' : '#6e5a78'
 
@@ -85,30 +95,29 @@ function ProgramSelect({
       }}
       aria-label={label}
     >
-      {options.map((opt) => (
+      {merged.map((opt) => (
         <option key={opt || '__empty'} value={opt}>
           {opt || '—'}
         </option>
       ))}
     </select>
   )
-}
+})
 
-function CloserSelect({
+const CloserSelect = memo(function CloserSelect({
   leadId,
   closer,
-  closerOptions,
+  options,
   defaultCloser,
   onCloserChange,
 }: {
   leadId: number
   closer: string
-  closerOptions: string[]
+  options: string[]
   defaultCloser: string
   onCloserChange: (leadId: number, closer: string) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
-  const options = buildCloserOptions(closerOptions)
   const value =
     options.find((o) => o.toLowerCase() === closer.trim().toLowerCase()) ?? defaultCloser
 
@@ -138,9 +147,9 @@ function CloserSelect({
       ))}
     </select>
   )
-}
+})
 
-function CalificacionToggle({
+const CalificacionToggle = memo(function CalificacionToggle({
   leadId,
   value,
   onChange,
@@ -183,9 +192,9 @@ function CalificacionToggle({
       </button>
     </div>
   )
-}
+})
 
-function StatusSelect({
+const StatusSelect = memo(function StatusSelect({
   leadId,
   status,
   onStatusChange,
@@ -229,9 +238,9 @@ function StatusSelect({
       ))}
     </select>
   )
-}
+})
 
-function CurrencyCell({
+const CurrencyCell = memo(function CurrencyCell({
   leadId,
   value,
   variant,
@@ -312,21 +321,9 @@ function CurrencyCell({
       {num > 0 ? formatCash(num) : isOwed ? '—' : '$0'}
     </button>
   )
-}
+})
 
-function PaymentCell({
-  leadId,
-  value,
-  onSave,
-}: {
-  leadId: number
-  value: number
-  onSave: (leadId: number, payment: number) => Promise<void>
-}) {
-  return <CurrencyCell leadId={leadId} value={value} variant="payment" onSave={onSave} />
-}
-
-function FathomLinkCell({
+const FathomLinkCell = memo(function FathomLinkCell({
   leadId,
   value,
   onSave,
@@ -429,9 +426,78 @@ function FathomLinkCell({
       </button>
     </span>
   )
+})
+
+type RowProps = {
+  row: DailyCall
+  closerOptions: string[]
+  programOptions: string[]
+  defaultCloser: string
+  onStatusChange: Props['onStatusChange']
+  onCloserChange: Props['onCloserChange']
+  onCalificacionChange: Props['onCalificacionChange']
+  onFathomLinkChange: Props['onFathomLinkChange']
+  onPaymentChange: Props['onPaymentChange']
+  onOwedChange: Props['onOwedChange']
+  onProgramOfferedChange: Props['onProgramOfferedChange']
+  onProgramadaOfrecidoChange: Props['onProgramadaOfrecidoChange']
 }
 
-export function DailyCallsTable({
+const DailyCallRow = memo(function DailyCallRow({
+  row,
+  closerOptions,
+  programOptions,
+  defaultCloser,
+  onStatusChange,
+  onCloserChange,
+  onCalificacionChange,
+  onFathomLinkChange,
+  onPaymentChange,
+  onOwedChange,
+  onProgramOfferedChange,
+  onProgramadaOfrecidoChange,
+}: RowProps) {
+  return (
+    <div className="neo-calls__row">
+      <div className="neo-calls__hora">{row.hora || '—'}</div>
+      <div className="neo-calls__lead" title={row.lead || 'Sin nombre'}>
+        {row.lead || 'Sin nombre'}
+      </div>
+      <CloserSelect
+        leadId={row.id}
+        closer={row.closer}
+        options={closerOptions}
+        defaultCloser={defaultCloser}
+        onCloserChange={onCloserChange}
+      />
+      <FathomLinkCell leadId={row.id} value={row.call_link} onSave={onFathomLinkChange} />
+      <StatusSelect leadId={row.id} status={row.status} onStatusChange={onStatusChange} />
+      <CalificacionToggle
+        leadId={row.id}
+        value={row.calificacion_llamada}
+        onChange={onCalificacionChange}
+      />
+      <ProgramSelect
+        leadId={row.id}
+        value={row.program_offered}
+        options={programOptions}
+        label="Programa comprado"
+        onChange={onProgramOfferedChange}
+      />
+      <ProgramSelect
+        leadId={row.id}
+        value={row.programada_ofrecido_llamada}
+        options={programOptions}
+        label="Programa ofrecido"
+        onChange={onProgramadaOfrecidoChange}
+      />
+      <CurrencyCell leadId={row.id} value={row.payment} variant="payment" onSave={onPaymentChange} />
+      <CurrencyCell leadId={row.id} value={row.owed} variant="owed" onSave={onOwedChange} />
+    </div>
+  )
+})
+
+export const DailyCallsTable = memo(function DailyCallsTable({
   items,
   closerOptions,
   programOptions,
@@ -447,6 +513,25 @@ export function DailyCallsTable({
   onProgramadaOfrecidoChange,
   onAddManualCall,
 }: Props) {
+  const [page, setPage] = useState(1)
+  const closerSelectOptions = useMemo(
+    () => buildCloserOptions(closerOptions),
+    [closerOptions],
+  )
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const paged = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return items.slice(start, start + PAGE_SIZE)
+  }, [items, page])
+
+  useEffect(() => {
+    setPage(1)
+  }, [items])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
   if (loading && items.length === 0) {
     return <div className="neo-panel__loading">Cargando llamadas</div>
   }
@@ -485,44 +570,50 @@ export function DailyCallsTable({
         <div>Pago</div>
         <div>Debe</div>
       </div>
-      {items.map((row) => (
-        <div key={row.id} className="neo-calls__row">
-          <div className="neo-calls__hora">{row.hora || '—'}</div>
-          <div className="neo-calls__lead" title={row.lead || 'Sin nombre'}>
-            {row.lead || 'Sin nombre'}
-          </div>
-          <CloserSelect
-            leadId={row.id}
-            closer={row.closer}
-            closerOptions={closerOptions}
-            defaultCloser={defaultCloser}
-            onCloserChange={onCloserChange}
-          />
-          <FathomLinkCell leadId={row.id} value={row.call_link} onSave={onFathomLinkChange} />
-          <StatusSelect leadId={row.id} status={row.status} onStatusChange={onStatusChange} />
-          <CalificacionToggle
-            leadId={row.id}
-            value={row.calificacion_llamada}
-            onChange={onCalificacionChange}
-          />
-          <ProgramSelect
-            leadId={row.id}
-            value={row.program_offered}
-            programOptions={programOptions}
-            label="Programa comprado"
-            onChange={onProgramOfferedChange}
-          />
-          <ProgramSelect
-            leadId={row.id}
-            value={row.programada_ofrecido_llamada}
-            programOptions={programOptions}
-            label="Programa ofrecido"
-            onChange={onProgramadaOfrecidoChange}
-          />
-          <PaymentCell leadId={row.id} value={row.payment} onSave={onPaymentChange} />
-          <CurrencyCell leadId={row.id} value={row.owed} variant="owed" onSave={onOwedChange} />
-        </div>
+      {paged.map((row) => (
+        <DailyCallRow
+          key={row.id}
+          row={row}
+          closerOptions={closerSelectOptions}
+          programOptions={programOptions}
+          defaultCloser={defaultCloser}
+          onStatusChange={onStatusChange}
+          onCloserChange={onCloserChange}
+          onCalificacionChange={onCalificacionChange}
+          onFathomLinkChange={onFathomLinkChange}
+          onPaymentChange={onPaymentChange}
+          onOwedChange={onOwedChange}
+          onProgramOfferedChange={onProgramOfferedChange}
+          onProgramadaOfrecidoChange={onProgramadaOfrecidoChange}
+        />
       ))}
+      {items.length > PAGE_SIZE ? (
+        <div className="neo-calls__pagination">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="neo-panel__btn neo-panel__btn--ghost"
+          >
+            Anterior
+          </button>
+          <span className="neo-calls__pagination-label">
+            Página {page} de {totalPages}
+            <span className="neo-calls__pagination-range">
+              ({Math.min(items.length, (page - 1) * PAGE_SIZE + 1)}–
+              {Math.min(items.length, page * PAGE_SIZE)} de {items.length})
+            </span>
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className="neo-panel__btn neo-panel__btn--ghost"
+          >
+            Siguiente
+          </button>
+        </div>
+      ) : null}
     </div>
   )
-}
+})

@@ -71,29 +71,7 @@
   mask-image: linear-gradient(180deg, black 0%, transparent 88%);
 }
 
-.neo-panel__backdrop::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(230, 57, 70, 0.012) 2px,
-    rgba(230, 57, 70, 0.012) 4px
-  );
-  animation: neo-scan 10s linear infinite;
-  opacity: 0.45;
-}
-
-@keyframes neo-scan {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(32px);
-  }
-}
+/* Scanline animada removida: pintaba el viewport completo en loop y hacía laggear la tabla. */
 
 .neo-panel__inner {
   position: relative;
@@ -246,19 +224,6 @@
   border-radius: 50%;
   background: var(--neo-hot);
   box-shadow: 0 0 8px var(--neo-hot-glow);
-  animation: neo-pulse 2s ease-in-out infinite;
-}
-
-@keyframes neo-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.55;
-    transform: scale(0.85);
-  }
 }
 
 .neo-panel__module {
@@ -379,6 +344,28 @@
   padding: 0.5rem 0 0.75rem;
 }
 
+.neo-calls__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 0.5rem 0.25rem;
+}
+
+.neo-calls__pagination-label {
+  font-family: var(--neo-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--neo-text2);
+}
+
+.neo-calls__pagination-range {
+  margin-left: 0.4rem;
+  opacity: 0.7;
+  font-size: 10px;
+}
+
 .neo-panel__empty--actions {
   display: flex;
   flex-direction: column;
@@ -489,7 +476,8 @@
   align-items: center;
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--neo-border-dim);
-  transition: background 0.15s;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
 }
 
 .neo-calls__row:last-child {
@@ -498,7 +486,8 @@
 
 .neo-calls__row:hover {
   background: rgba(230, 57, 70, 0.06);
-  box-shadow: inset 2px 0 0 var(--neo-accent);
+  border-left: 2px solid var(--neo-accent);
+  padding-left: calc(1rem - 2px);
 }
 
 .neo-calls__hora {
@@ -516,6 +505,7 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--neo-text);
+  text-transform: uppercase;
 }
 
 .neo-calls__closer-select {

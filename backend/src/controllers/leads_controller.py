@@ -220,7 +220,6 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
     month_s = _lead_month_string_ar(row)
     if month_s is None and created is not None:
         month_s = f"{created.year}-{created.month:02d}"
-    ing = float(row.ingresos_lead or 0)
     kw = row.keyword
     price_catalog = program_price_usd_for_prog_raw(norm_prices or {}, row.programa_ofrecido)
     return LeadOut(
@@ -246,7 +245,7 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         program_offered=row.programa_ofrecido,
         programada_ofrecido_llamada=(row.programada_ofrecido_llamada or "").strip() or None,
         program_price_usd=price_catalog,
-        revenue=ing,
+        revenue=float(price_catalog or 0),
         payment=float(row.pago or 0),
         owed=float(row.debe or 0),
         closer=(row.closer or "").strip() or None,
@@ -258,8 +257,6 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         dolores_setting=row.dolores_setting,
         dolores_llamada=row.dolores_llamada,
         razon_compra=row.razon_compra,
-        ingresos_mensuales=ing,
-        ingresos_rango=(row.ingresos_rango or "").strip() or None,
         formulario=normalize_formulario(getattr(row, "formulario", None)),
         calendly_event_uri=None,
         calendly_invitee_uri=None,
@@ -572,10 +569,6 @@ def patch_lead(
             row.programa_ofrecido = data["program_offered"] or ""
         if "programada_ofrecido_llamada" in data:
             row.programada_ofrecido_llamada = data["programada_ofrecido_llamada"] or ""
-        if "ingresos_mensuales" in data:
-            row.ingresos_lead = float(data["ingresos_mensuales"] or 0)
-        elif "revenue" in data:
-            row.ingresos_lead = float(data["revenue"] or 0)
         if "payment" in data:
             row.pago = float(data["payment"] or 0)
         if "owed" in data:
@@ -590,8 +583,6 @@ def patch_lead(
             row.closer_report = data["closer_report"] or ""
         if "razon_compra" in data:
             row.razon_compra = data["razon_compra"] or ""
-        if "ingresos_rango" in data:
-            row.ingresos_rango = data["ingresos_rango"] or ""
         if "formulario" in data:
             row.formulario = merge_formulario(row.formulario, data.get("formulario") or {})
         if "setter" in data:

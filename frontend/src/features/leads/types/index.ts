@@ -105,8 +105,6 @@ export type Lead = {
   dolores_setting: string | null
   dolores_llamada: string | null
   razon_compra: string | null
-  ingresos_rango?: string | null
-  ingresos_mensuales: number
   /** 7 respuestas del formulario GHL calendar. */
   formulario?: LeadFormulario | Record<string, string> | null
   calendly_event_uri: string | null
@@ -274,8 +272,6 @@ export function buildColumns(
     { key: 'call_link', label: 'Link de llamada', width: 130, type: 'link', editable: true, defaultVisible: true },
     { key: 'dolores_llamada', label: 'Dolores llamada', width: 200, type: 'text', editable: true, defaultVisible: false },
     { key: 'razon_compra', label: 'Razón compra', width: 100, type: 'text', editable: true, defaultVisible: false },
-    { key: 'ingresos_lead', label: 'Ingresos', width: 160, type: 'text', editable: false, defaultVisible: true },
-    { key: 'ingresos_mensuales', label: 'Ingresos lead ($)', width: 130, type: 'currency', editable: true, defaultVisible: false },
     // Venta
     {
       key: 'programada_ofrecido_llamada',

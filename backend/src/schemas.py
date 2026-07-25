@@ -484,8 +484,6 @@ class LeadOut(BaseModel):
     dolores_setting: str | None = None
     dolores_llamada: str | None = None
     razon_compra: str | None = None
-    ingresos_mensuales: float = 0
-    ingresos_rango: str | None = None
     formulario: dict[str, str] = Field(
         default_factory=dict,
         description="7 respuestas del formulario GHL calendar (keys: forma_agendamiento, conoce_juano, …).",
@@ -542,7 +540,6 @@ class LeadPatchRequest(BaseModel):
     program_offered: str | None = None
     programada_ofrecido_llamada: str | None = None
     revenue: float | None = None
-    ingresos_mensuales: float | None = None
     payment: float | None = None
     owed: float | None = None
     notes: str | None = None
@@ -550,7 +547,6 @@ class LeadPatchRequest(BaseModel):
     dolores_llamada: str | None = None
     closer_report: str | None = None
     razon_compra: str | None = None
-    ingresos_rango: str | None = None
     formulario: dict[str, str] | None = Field(
         default=None,
         description="Parcial o completo: 7 keys del formulario GHL.",

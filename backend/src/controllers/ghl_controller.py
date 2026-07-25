@@ -222,7 +222,6 @@ def _apply_appointment_to_lead(
     ghl_contact_id: str,
     ig: str = "",
     formulario: dict[str, str] | None = None,
-    ingresos_rango: str = "",
 ) -> str:
     """Upsert lead por email o ghl_contact_id. Returns 'created' o 'updated'."""
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
@@ -260,8 +259,6 @@ def _apply_appointment_to_lead(
         row.agendo_en = "GHL"
         if formulario:
             row.formulario = merge_formulario(row.formulario, formulario)
-        if ingresos_rango:
-            row.ingresos_rango = ingresos_rango
         return "updated"
 
     # Crear nuevo lead con todos los campos requeridos
@@ -282,7 +279,6 @@ def _apply_appointment_to_lead(
         status="Agendado",
         agendo_en="GHL",
         formulario=merge_formulario({}, formulario),
-        ingresos_rango=ingresos_rango or "",
     )
     return "created"
 
@@ -411,8 +407,6 @@ async def ghl_webhook(request: Request):
     ).strip()
 
     formulario = extract_formulario_from_ghl_body(body)
-    # Dinero disponible también en ingresos_rango (columna ya usada en UI)
-    ingresos_rango = (formulario.get("dinero_disponible") or "").strip()
 
     # Datos de la cita
     trigger_data = body.get("triggerData") or {}
@@ -474,7 +468,6 @@ async def ghl_webhook(request: Request):
             ghl_contact_id=contact_id,
             ig=ig,
             formulario=formulario,
-            ingresos_rango=ingresos_rango,
         )
         print(f"[ghl webhook] lead {result}: {name} ig={ig}", flush=True)
         return {"status": "ok", "action": result}

@@ -122,7 +122,7 @@ function asFiniteNumber(v: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Cash cobrado del lead (columna Pagó / `pago` en BD). No usar `revenue` / ingresos_lead (facturación). */
+/** Cash cobrado del lead (columna Pagó / `pago` en BD). No usar `revenue` (facturación). */
 function leadCashCollected(l: LeadRow): number {
   return asFiniteNumber((l as Record<string, unknown>).payment)
 }

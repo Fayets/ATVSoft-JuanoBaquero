@@ -27,38 +27,10 @@ import {
 } from '@/features/admin-panel/services/admin-panel-service'
 import { DEFAULT_DAILY_CLOSER } from '../constants'
 import type { DailyCall } from '../types'
+import { ArgentinaClock } from './argentina-clock'
 import { DailyCallsTable } from './daily-calls-table'
 import '../daily-panel.css'
 import '../daily-panel-manual-call.css'
-
-const AR_TZ = 'America/Argentina/Buenos_Aires'
-
-function useArgentinaClock(active: boolean): string {
-  const [clock, setClock] = useState('')
-
-  useEffect(() => {
-    if (!active) {
-      setClock('')
-      return undefined
-    }
-    const tick = () => {
-      setClock(
-        new Intl.DateTimeFormat('es-AR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-          timeZone: AR_TZ,
-        }).format(new Date()),
-      )
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [active])
-
-  return clock
-}
 
 function PanelShell({ children }: { children: ReactNode }) {
   return (
@@ -92,7 +64,6 @@ export function DailyPanelPage({
   const [manualCloser, setManualCloser] = useState('')
   const [manualSaving, setManualSaving] = useState(false)
   const [generatingReport, setGeneratingReport] = useState(false)
-  const clock = useArgentinaClock(ready && Boolean(userId))
 
   const fetchCalls = useCallback(
     async (silent = false) => {
@@ -375,7 +346,7 @@ export function DailyPanelPage({
               />
             </label>
           ) : null}
-          {clock ? <span className="neo-panel__clock">{clock}</span> : null}
+          <ArgentinaClock active={ready && Boolean(userId)} />
           <button
             type="button"
             disabled={loading || generatingReport || calls.length === 0}

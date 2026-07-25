@@ -135,23 +135,6 @@ function leadEmailDisplay(lead: Lead): string | null {
   return calendlyEmailFromNotes(lead.notes)
 }
 
-function ingresosFromNotes(notes: string | null | undefined): string | null {
-  if (notes == null || !String(notes).trim()) return null
-  const m = /Ingresos actuales:\s*(.+)/i.exec(String(notes))
-  const cap = m?.[1]?.trim().split('\n')[0]?.trim()
-  return cap || null
-}
-
-function leadIngresosDisplay(lead: Lead): string | null {
-  const rango = lead.ingresos_rango?.trim()
-  if (rango) return rango
-  const fromNotes = ingresosFromNotes(lead.notes)
-  if (fromNotes) return fromNotes
-  const n = lead.ingresos_mensuales
-  if (n != null && n > 0) return String(n)
-  return null
-}
-
 /** ISO `YYYY-MM-DD` o `…T00:00:00…` → solo fecha `dd/mm/aaaa`; si no parsea, null. */
 function formatIsoDateToDdMmYyyy(raw: string | null | undefined): string | null {
   const s = raw != null ? String(raw).trim() : ''
@@ -1483,7 +1466,7 @@ function LeadsTable({
 // LEAD TABLE CELL
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /** Campos con respuesta larga: en la grilla solo «Abrir» → modal con texto completo. */
-const MODAL_TEXT_CELL_KEYS = ['ingresos_lead'] as const
+const MODAL_TEXT_CELL_KEYS = [] as const
 
 function AbrirTextoModalCell({
   text,
@@ -1570,9 +1553,7 @@ function LeadsTableCell({
         ? agendoEnStoredValue(lead)
         : col.key === 'email'
           ? leadEmailDisplay(lead)
-          : col.key === 'ingresos_lead'
-            ? leadIngresosDisplay(lead)
-            : raw
+          : raw
 
   if (readOnly) {
     if (col.key === 'client_name') {

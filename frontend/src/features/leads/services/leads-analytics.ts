@@ -6,7 +6,6 @@ import { apiFetch } from '@/lib/api'
 
 export type LeadRow = Record<string, unknown> & {
   email?: string | null
-  ingresos_rango?: string | null
 }
 
 export type LeadsFunnel = {

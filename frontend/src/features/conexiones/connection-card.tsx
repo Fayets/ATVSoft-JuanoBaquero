@@ -382,17 +382,27 @@ function ConnectionCardInner({
           Sincronizar leads
         </div>
         <p className="mb-3 text-[12px] leading-snug text-[var(--text2)]">
-          Auto cada{' '}
-          {autoSyncInfo?.interval_minutes
-            ? autoSyncInfo.interval_minutes % 1440 === 0
-              ? `${autoSyncInfo.interval_minutes / 1440} día`
-              : autoSyncInfo.interval_minutes % 60 === 0
-                ? `${autoSyncInfo.interval_minutes / 60} h`
-                : `${autoSyncInfo.interval_minutes} min`
-            : `${autoSyncInfo?.interval_hours ?? 6} h`}
-          : el servidor revisa si hay agendas nuevas y solo entonces trae datos. El botón{' '}
-          <span className="font-semibold text-[var(--text)]">Sincronizar</span> siempre descarga
-          leads. Intervalo en Ajustes → Tasa de refresco.
+          {autoSyncInfo?.interval_minutes === 0 ? (
+            <>
+              Auto-sync <span className="font-semibold text-[var(--text)]">desactivado</span>. El
+              botón <span className="font-semibold text-[var(--text)]">Sincronizar</span> sigue
+              trayendo leads. Activá el intervalo en Ajustes → Tasa de refresco.
+            </>
+          ) : (
+            <>
+              Auto cada{' '}
+              {autoSyncInfo?.interval_minutes
+                ? autoSyncInfo.interval_minutes % 1440 === 0
+                  ? `${autoSyncInfo.interval_minutes / 1440} día`
+                  : autoSyncInfo.interval_minutes % 60 === 0
+                    ? `${autoSyncInfo.interval_minutes / 60} h`
+                    : `${autoSyncInfo.interval_minutes} min`
+                : `${autoSyncInfo?.interval_hours ?? 6} h`}
+              : el servidor revisa si hay agendas nuevas y solo entonces trae datos. El botón{' '}
+              <span className="font-semibold text-[var(--text)]">Sincronizar</span> siempre descarga
+              leads. Intervalo en Ajustes → Tasa de refresco.
+            </>
+          )}
         </p>
         {autoSyncInfo ? (
           <ul className="mb-3 space-y-1 text-[11px] text-[var(--text3)]">
@@ -415,9 +425,11 @@ function ConnectionCardInner({
             </li>
             <li>
               Próximo auto-check:{' '}
-              {autoSyncInfo.next_run_at
-                ? new Date(autoSyncInfo.next_run_at).toLocaleString('es-AR')
-                : 'al reiniciar el backend'}
+              {autoSyncInfo.interval_minutes === 0
+                ? 'desactivado'
+                : autoSyncInfo.next_run_at
+                  ? new Date(autoSyncInfo.next_run_at).toLocaleString('es-AR')
+                  : '—'}
             </li>
           </ul>
         ) : null}

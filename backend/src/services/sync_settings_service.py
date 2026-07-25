@@ -1,4 +1,7 @@
-"""Intervalos de sync automático (historias / reels / calendly), persistidos en BD."""
+"""Intervalos de sync automático (historias / reels / calendly), persistidos en BD.
+
+`0` = desactivado (el job no corre en el scheduler).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +14,8 @@ from src.models import AppSyncSettings
 DEFAULT_STORIES_INTERVAL_MINUTES = 5
 DEFAULT_REELS_INTERVAL_MINUTES = 1440  # ~24 h
 DEFAULT_CALENDLY_INTERVAL_MINUTES = 360  # 6 h
+# 0 = desactivado; si está activo, el mínimo es 1 (Calendly activo: 60)
+DISABLED_INTERVAL_MINUTES = 0
 MIN_SYNC_INTERVAL_MINUTES = 1
 MAX_SYNC_INTERVAL_MINUTES = 10080  # 7 días
 MIN_CALENDLY_INTERVAL_MINUTES = 60
@@ -18,11 +23,21 @@ MAX_CALENDLY_INTERVAL_MINUTES = 10080
 
 
 def _clamp_interval(minutes: int) -> int:
-    return max(MIN_SYNC_INTERVAL_MINUTES, min(MAX_SYNC_INTERVAL_MINUTES, int(minutes)))
+    m = int(minutes)
+    if m <= DISABLED_INTERVAL_MINUTES:
+        return DISABLED_INTERVAL_MINUTES
+    return max(MIN_SYNC_INTERVAL_MINUTES, min(MAX_SYNC_INTERVAL_MINUTES, m))
 
 
 def _clamp_calendly_interval(minutes: int) -> int:
-    return max(MIN_CALENDLY_INTERVAL_MINUTES, min(MAX_CALENDLY_INTERVAL_MINUTES, int(minutes)))
+    m = int(minutes)
+    if m <= DISABLED_INTERVAL_MINUTES:
+        return DISABLED_INTERVAL_MINUTES
+    return max(MIN_CALENDLY_INTERVAL_MINUTES, min(MAX_CALENDLY_INTERVAL_MINUTES, m))
+
+
+def is_sync_disabled(minutes: int) -> bool:
+    return int(minutes) <= DISABLED_INTERVAL_MINUTES
 
 
 def _ensure_row() -> AppSyncSettings:

@@ -657,24 +657,29 @@ class SyncSettingsOut(BaseModel):
     stories_next_sync: str | None = None
     reels_next_sync: str | None = None
     calendly_next_sync: str | None = None
-    min_interval_minutes: int = 1
+    # 0 = desactivado; si activo, el mínimo efectivo es 1 (Calendly 60).
+    min_interval_minutes: int = 0
     max_interval_minutes: int = 10080
-    min_calendly_interval_minutes: int = 60
+    min_calendly_interval_minutes: int = 0
     max_calendly_interval_minutes: int = 10080
+    disabled_interval_minutes: int = 0
 
 
 class SyncSettingsPatch(BaseModel):
     stories_interval_minutes: int | None = Field(
         default=None,
-        description="Minutos entre sync automático de historias (Instagram).",
+        ge=0,
+        description="Minutos entre sync de historias. 0 = desactivado.",
     )
     reels_interval_minutes: int | None = Field(
         default=None,
-        description="Minutos entre refresh automático de métricas de reels.",
+        ge=0,
+        description="Minutos entre refresh de métricas de reels. 0 = desactivado.",
     )
     calendly_interval_minutes: int | None = Field(
         default=None,
-        description="Minutos entre auto-check/sync de Calendly (p. ej. 360=6h).",
+        ge=0,
+        description="Minutos entre auto-check Calendly. 0 = desactivado.",
     )
 
 

@@ -1,4 +1,7 @@
-"""APScheduler: intervalos dinámicos para auto_sync_stories, auto_refresh_reels_metrics y Calendly."""
+"""APScheduler: intervalos dinámicos para auto_sync_stories, auto_refresh_reels_metrics y Calendly.
+
+Intervalo `0` = job pausado (desactivado).
+"""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from src.services.sync_settings_service import (
     get_calendly_interval_minutes,
     get_reels_interval_minutes,
     get_stories_interval_minutes,
+    is_sync_disabled,
 )
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -33,31 +37,42 @@ def next_job_run_time(job_id: str) -> datetime | None:
     job = _scheduler.get_job(job_id)
     if job is None:
         return None
+    # Pausado / desactivado → sin próxima corrida
+    if getattr(job, "next_run_time", None) is None:
+        return None
     return job.next_run_time
 
 
+def _set_job_interval(job_id: str, minutes: int, *, run_immediately: bool = False) -> None:
+    if _scheduler is None:
+        return
+    job = _scheduler.get_job(job_id)
+    if job is None:
+        return
+    if is_sync_disabled(minutes):
+        try:
+            _scheduler.pause_job(job_id)
+        except Exception:
+            pass
+        return
+    kwargs: dict[str, Any] = {"trigger": IntervalTrigger(minutes=int(minutes))}
+    if run_immediately:
+        kwargs["next_run_time"] = datetime.now(AR_TZ)
+    _scheduler.reschedule_job(job_id, **kwargs)
+    try:
+        _scheduler.resume_job(job_id)
+    except Exception:
+        pass
+
+
 def apply_sync_schedules(*, stories_run_immediately: bool = False) -> None:
-    """Relee intervalos de BD y reprograma los jobs ya registrados en el scheduler."""
+    """Relee intervalos de BD y reprograma (o pausa) los jobs ya registrados."""
     if _scheduler is None:
         return
     stories_m = get_stories_interval_minutes()
     reels_m = get_reels_interval_minutes()
     calendly_m = get_calendly_interval_minutes()
 
-    stories_job = _scheduler.get_job(STORIES_JOB_ID)
-    if stories_job is not None:
-        kwargs: dict[str, Any] = {"trigger": IntervalTrigger(minutes=stories_m)}
-        if stories_run_immediately:
-            kwargs["next_run_time"] = datetime.now(AR_TZ)
-        _scheduler.reschedule_job(STORIES_JOB_ID, **kwargs)
-
-    reels_job = _scheduler.get_job(REELS_JOB_ID)
-    if reels_job is not None:
-        _scheduler.reschedule_job(REELS_JOB_ID, trigger=IntervalTrigger(minutes=reels_m))
-
-    calendly_job = _scheduler.get_job(CALENDLY_JOB_ID)
-    if calendly_job is not None:
-        _scheduler.reschedule_job(
-            CALENDLY_JOB_ID,
-            trigger=IntervalTrigger(minutes=calendly_m),
-        )
+    _set_job_interval(STORIES_JOB_ID, stories_m, run_immediately=stories_run_immediately)
+    _set_job_interval(REELS_JOB_ID, reels_m)
+    _set_job_interval(CALENDLY_JOB_ID, calendly_m)

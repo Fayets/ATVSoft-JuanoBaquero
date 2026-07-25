@@ -298,13 +298,12 @@ def list_leads(
 
     with db_session:
         norm_prices = build_program_norm_price_map(uid)
-        rows = [
-            r
-            for r in list(LeadEntity.select())
-            if int(r.user_id) == uid
-        ]
-        if not include_all:
-            rows = [r for r in rows if r.agendo is not None]
+        # Filtrar en query (evita cargar toda la tabla Lead).
+        if include_all:
+            q = LeadEntity.select(lambda r: r.user_id == uid)
+        else:
+            q = LeadEntity.select(lambda r: r.user_id == uid and r.agendo is not None)
+        rows = list(q)
         if month_key is not None:
             year_m, month_m = month_key
             rows = [

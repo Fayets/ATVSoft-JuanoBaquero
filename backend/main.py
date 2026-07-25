@@ -1,7 +1,7 @@
+import asyncio
 import os
 import glob
 from contextlib import asynccontextmanager
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -52,6 +52,7 @@ from src.services.sync_settings_service import (
     get_calendly_interval_minutes,
     get_reels_interval_minutes,
     get_stories_interval_minutes,
+    is_sync_disabled,
 )
 from src.services.stories_service import StoriesService
 from src.services.closer_report_auto_service import generate_daily_reports_all_users
@@ -61,8 +62,17 @@ CLOSER_DAILY_REPORT_JOB_ID = "auto_closer_daily_reports"
 scheduler = AsyncIOScheduler()
 
 
+def _fmt_interval_log(minutes: int) -> str:
+    if is_sync_disabled(minutes):
+        return "desactivado"
+    return f"cada {minutes} min"
+
+
 async def auto_sync_stories() -> None:
     """Sincroniza Instagram para todos los usuarios que tengan ApiConnection de instagram"""
+    if is_sync_disabled(get_stories_interval_minutes()):
+        print("[scheduler] Auto-sync historias desactivado; skip")
+        return
     try:
         with db_session:
             _ = db
@@ -82,6 +92,9 @@ async def auto_sync_stories() -> None:
 
 async def auto_refresh_reels_metrics() -> None:
     """Actualiza métricas en BD de reels ya existentes (Graph API por instagram_id)."""
+    if is_sync_disabled(get_reels_interval_minutes()):
+        print("[scheduler] Auto refresh-metrics reels desactivado; skip")
+        return
     try:
         with db_session:
             _ = db
@@ -106,16 +119,20 @@ async def auto_sync_calendly() -> None:
         run_calendly_auto_sync_for_user,
     )
 
+    if is_sync_disabled(get_calendly_interval_minutes()):
+        print("[scheduler] Auto-sync Calendly desactivado; skip")
+        return
     try:
         interval_m = get_calendly_interval_minutes()
-        user_ids = list_calendly_user_ids_with_token()
+        user_ids = await asyncio.to_thread(list_calendly_user_ids_with_token)
         print(
             f"[scheduler] Calendly auto-check (cada {interval_m} min) "
             f"para {len(user_ids)} usuario(s)"
         )
         for user_id in user_ids:
             try:
-                result = run_calendly_auto_sync_for_user(int(user_id))
+                # HTTP sync bloqueante: fuera del event loop
+                result = await asyncio.to_thread(run_calendly_auto_sync_for_user, int(user_id))
                 if result.get("skipped"):
                     print(
                         f"[scheduler] Calendly skip user={user_id} reason={result.get('reason')}"
@@ -135,7 +152,9 @@ async def auto_sync_calendly() -> None:
 async def auto_generate_closer_daily_reports() -> None:
     """Reporte de ventas del closer desde panel diario (23:00 Argentina)."""
     try:
-        generate_daily_reports_all_users(send_discord=True)
+        await asyncio.to_thread(
+            lambda: generate_daily_reports_all_users(send_discord=True)
+        )
     except Exception as e:
         print(f"[scheduler] Error en auto_generate_closer_daily_reports: {e}")
 
@@ -146,22 +165,22 @@ async def lifespan(_: FastAPI):
     archivos = glob.glob(os.path.join(media_dir, "**/*.jpg"), recursive=True)
     print(f"[media] Archivos encontrados: {len(archivos)}")
     print(f"[media] Directorio: {media_dir}")
+    # Intervalos placeholder; apply_sync_schedules aplica BD (y pausa si = 0).
     scheduler.add_job(
         auto_sync_stories,
-        trigger=IntervalTrigger(minutes=DEFAULT_STORIES_INTERVAL_MINUTES),
+        trigger=IntervalTrigger(minutes=max(DEFAULT_STORIES_INTERVAL_MINUTES, 1)),
         id=STORIES_JOB_ID,
         replace_existing=True,
-        next_run_time=datetime.now(AR_TZ),
     )
     scheduler.add_job(
         auto_refresh_reels_metrics,
-        trigger=IntervalTrigger(minutes=DEFAULT_REELS_INTERVAL_MINUTES),
+        trigger=IntervalTrigger(minutes=max(DEFAULT_REELS_INTERVAL_MINUTES, 1)),
         id=REELS_JOB_ID,
         replace_existing=True,
     )
     scheduler.add_job(
         auto_sync_calendly,
-        trigger=IntervalTrigger(minutes=DEFAULT_CALENDLY_INTERVAL_MINUTES),
+        trigger=IntervalTrigger(minutes=max(DEFAULT_CALENDLY_INTERVAL_MINUTES, 1)),
         id=CALENDLY_JOB_ID,
         replace_existing=True,
     )
@@ -174,15 +193,10 @@ async def lifespan(_: FastAPI):
     bind_sync_scheduler(scheduler)
     apply_sync_schedules()
     scheduler.start()
+    print(f"[scheduler] Auto-sync historias {_fmt_interval_log(get_stories_interval_minutes())}")
+    print(f"[scheduler] Auto refresh-metrics reels {_fmt_interval_log(get_reels_interval_minutes())}")
     print(
-        f"[scheduler] Auto-sync historias cada {get_stories_interval_minutes()} min "
-        f"(próximo job según APScheduler)"
-    )
-    print(
-        f"[scheduler] Auto refresh-metrics reels cada {get_reels_interval_minutes()} min"
-    )
-    print(
-        f"[scheduler] Auto-sync Calendly cada {get_calendly_interval_minutes()} min "
+        f"[scheduler] Auto-sync Calendly {_fmt_interval_log(get_calendly_interval_minutes())} "
         f"(check liviano → sync solo si hay novedades)"
     )
     print("[scheduler] Reporte closer ventas automático diario a las 23:00 (Argentina)")

@@ -16,20 +16,24 @@ type SyncSettings = {
   max_interval_minutes: number
   min_calendly_interval_minutes?: number
   max_calendly_interval_minutes?: number
+  disabled_interval_minutes?: number
 }
 
-const STORIES_PRESETS = [60, 120, 360] as const
-const REELS_PRESETS = [120, 360, 1440] as const
-const CALENDLY_PRESETS = [360, 720, 1440] as const
+const DISABLED = 0
+const STORIES_PRESETS = [DISABLED, 60, 120, 360] as const
+const REELS_PRESETS = [DISABLED, 120, 360, 1440] as const
+const CALENDLY_PRESETS = [DISABLED, 360, 720, 1440] as const
 
 function formatIntervalLabel(minutes: number): string {
+  if (minutes <= DISABLED) return 'Desactivado'
   if (minutes < 60) return `${minutes} min`
   if (minutes % 1440 === 0) return `${minutes / 1440} día${minutes / 1440 > 1 ? 's' : ''}`
   if (minutes % 60 === 0) return `${minutes / 60} h`
   return `${minutes} min`
 }
 
-function formatNextRun(iso: string | null | undefined): string {
+function formatNextRun(iso: string | null | undefined, minutes: number): string {
+  if (minutes <= DISABLED) return 'Desactivado'
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
@@ -42,6 +46,12 @@ function formatNextRun(iso: string | null | undefined): string {
   })
 }
 
+function isValidInterval(num: number, min: number, max: number, activeMin: number): boolean {
+  if (!Number.isFinite(num)) return false
+  if (num === DISABLED) return true
+  return num >= Math.max(min, activeMin) && num <= max
+}
+
 type IntervalFieldProps = {
   label: string
   description: string
@@ -49,6 +59,8 @@ type IntervalFieldProps = {
   disabled: boolean
   min: number
   max: number
+  /** Mínimo cuando el job está activo (≠ 0). */
+  activeMin: number
   nextSync: string | null
   presets?: readonly number[]
   onChange: (v: string) => void
@@ -62,13 +74,15 @@ function IntervalField({
   disabled,
   min,
   max,
+  activeMin,
   nextSync,
   presets = STORIES_PRESETS,
   onChange,
   onPreset,
 }: IntervalFieldProps) {
   const num = Number(value)
-  const valid = Number.isFinite(num) && num >= min && num <= max
+  const valid = isValidInterval(num, min, max, activeMin)
+  const isOff = valid && num <= DISABLED
 
   return (
     <div className="rounded-2xl border border-[var(--border2)] bg-[var(--bg2)] p-6 shadow-[0_0_0_1px_rgba(200,70,80,0.12),0_0_28px_-8px_rgba(180,50,60,0.35)]">
@@ -95,7 +109,9 @@ function IntervalField({
               ≈ <span className="font-mono-num text-[var(--text)]">{formatIntervalLabel(num)}</span>
             </>
           ) : (
-            <span className="text-[var(--red)]">Entre {min} y {max.toLocaleString('es-AR')} min</span>
+            <span className="text-[var(--red)]">
+              {DISABLED} (off) o entre {activeMin} y {max.toLocaleString('es-AR')} min
+            </span>
           )}
         </div>
       </div>
@@ -118,7 +134,9 @@ function IntervalField({
       </div>
       <p className="mt-4 text-[11px] text-[var(--text3)]">
         Próxima corrida automática:{' '}
-        <span className="font-mono-num text-[var(--text2)]">{formatNextRun(nextSync)}</span>
+        <span className={`font-mono-num ${isOff ? 'text-[var(--text3)]' : 'text-[var(--text2)]'}`}>
+          {formatNextRun(nextSync, valid ? num : -1)}
+        </span>
       </p>
     </div>
   )
@@ -163,20 +181,13 @@ export default function TasaRefrescoPage() {
     const reels = Number(reelsMin)
     const calendly = Number(calendlyMin)
     const { min_interval_minutes: min, max_interval_minutes: max } = settings
-    const calMin = settings.min_calendly_interval_minutes ?? 60
     const calMax = settings.max_calendly_interval_minutes ?? max
     if (
-      !Number.isFinite(stories) ||
-      !Number.isFinite(reels) ||
-      !Number.isFinite(calendly) ||
-      stories < min ||
-      stories > max ||
-      reels < min ||
-      reels > max ||
-      calendly < calMin ||
-      calendly > calMax
+      !isValidInterval(stories, min, max, 1) ||
+      !isValidInterval(reels, min, max, 1) ||
+      !isValidInterval(calendly, min, calMax, 60)
     ) {
-      toast(`Revisá los intervalos (Calendly: ${calMin}–${calMax} min)`)
+      toast('Revisá los intervalos: 0 = desactivado, o un valor válido en minutos')
       return
     }
     const storiesChanged = Math.round(stories) !== settings.stories_interval_minutes
@@ -200,7 +211,7 @@ export default function TasaRefrescoPage() {
       setStoriesMin(String(data.stories_interval_minutes))
       setReelsMin(String(data.reels_interval_minutes))
       setCalendlyMin(String(data.calendly_interval_minutes ?? 360))
-      if (storiesChanged) {
+      if (storiesChanged && Math.round(stories) > DISABLED) {
         window.dispatchEvent(new Event('stories-sync-settings-updated'))
         toast('Guardado. Sincronizando historias y reiniciando contador…')
       } else {
@@ -215,9 +226,8 @@ export default function TasaRefrescoPage() {
     return <div className="py-12 text-center text-[var(--text3)]">Cargando...</div>
   }
 
-  const min = settings?.min_interval_minutes ?? 1
+  const min = settings?.min_interval_minutes ?? 0
   const max = settings?.max_interval_minutes ?? 10080
-  const calMin = settings?.min_calendly_interval_minutes ?? 60
   const calMax = settings?.max_calendly_interval_minutes ?? 10080
 
   return (
@@ -225,9 +235,9 @@ export default function TasaRefrescoPage() {
       <div className="mb-8">
         <h2 className="text-lg font-semibold tracking-tight text-[var(--text)]">Tasa de refresco</h2>
         <p className="mt-1 max-w-2xl text-[12px] text-[var(--text3)]">
-          Configurá cada cuánto corre cada job en segundo plano. En Calendly el intervalo es del
-          check liviano: solo si hay agendas nuevas se traen los datos. Los cambios aplican al
-          instante sin reiniciar el backend.
+          Configurá cada cuánto corre cada job en segundo plano, o desactivalo (0). En Calendly el
+          intervalo es del check liviano: solo si hay agendas nuevas se traen los datos. Los cambios
+          aplican al instante sin reiniciar el backend.
         </p>
       </div>
 
@@ -239,6 +249,7 @@ export default function TasaRefrescoPage() {
           disabled={saving}
           min={min}
           max={max}
+          activeMin={1}
           nextSync={settings?.stories_next_sync ?? null}
           presets={STORIES_PRESETS}
           onChange={setStoriesMin}
@@ -251,6 +262,7 @@ export default function TasaRefrescoPage() {
           disabled={saving}
           min={min}
           max={max}
+          activeMin={1}
           nextSync={settings?.reels_next_sync ?? null}
           presets={REELS_PRESETS}
           onChange={setReelsMin}
@@ -261,8 +273,9 @@ export default function TasaRefrescoPage() {
           description="Check liviano periódico; solo si hay novedades sincroniza leads. El botón «Sincronizar» en Leads siempre trae los datos."
           value={calendlyMin}
           disabled={saving}
-          min={calMin}
+          min={min}
           max={calMax}
+          activeMin={60}
           nextSync={settings?.calendly_next_sync ?? null}
           presets={CALENDLY_PRESETS}
           onChange={setCalendlyMin}

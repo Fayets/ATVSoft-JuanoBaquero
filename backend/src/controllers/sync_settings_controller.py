@@ -13,11 +13,11 @@ from src.services.sync_scheduler_service import (
     next_job_run_time,
 )
 from src.services.sync_settings_service import (
+    DISABLED_INTERVAL_MINUTES,
     MAX_CALENDLY_INTERVAL_MINUTES,
     MAX_SYNC_INTERVAL_MINUTES,
-    MIN_CALENDLY_INTERVAL_MINUTES,
-    MIN_SYNC_INTERVAL_MINUTES,
     get_sync_settings_dict,
+    is_sync_disabled,
     update_sync_settings,
 )
 
@@ -45,17 +45,27 @@ def _iso_dt(value: datetime | None) -> str | None:
 
 def _build_out() -> SyncSettingsOut:
     data = get_sync_settings_dict()
+    stories_m = data["stories_interval_minutes"]
+    reels_m = data["reels_interval_minutes"]
+    calendly_m = data["calendly_interval_minutes"]
     return SyncSettingsOut(
-        stories_interval_minutes=data["stories_interval_minutes"],
-        reels_interval_minutes=data["reels_interval_minutes"],
-        calendly_interval_minutes=data["calendly_interval_minutes"],
-        stories_next_sync=_iso_dt(next_job_run_time(STORIES_JOB_ID)),
-        reels_next_sync=_iso_dt(next_job_run_time(REELS_JOB_ID)),
-        calendly_next_sync=_iso_dt(next_job_run_time(CALENDLY_JOB_ID)),
-        min_interval_minutes=MIN_SYNC_INTERVAL_MINUTES,
+        stories_interval_minutes=stories_m,
+        reels_interval_minutes=reels_m,
+        calendly_interval_minutes=calendly_m,
+        stories_next_sync=None
+        if is_sync_disabled(stories_m)
+        else _iso_dt(next_job_run_time(STORIES_JOB_ID)),
+        reels_next_sync=None
+        if is_sync_disabled(reels_m)
+        else _iso_dt(next_job_run_time(REELS_JOB_ID)),
+        calendly_next_sync=None
+        if is_sync_disabled(calendly_m)
+        else _iso_dt(next_job_run_time(CALENDLY_JOB_ID)),
+        min_interval_minutes=DISABLED_INTERVAL_MINUTES,
         max_interval_minutes=MAX_SYNC_INTERVAL_MINUTES,
-        min_calendly_interval_minutes=MIN_CALENDLY_INTERVAL_MINUTES,
+        min_calendly_interval_minutes=DISABLED_INTERVAL_MINUTES,
         max_calendly_interval_minutes=MAX_CALENDLY_INTERVAL_MINUTES,
+        disabled_interval_minutes=DISABLED_INTERVAL_MINUTES,
     )
 
 
@@ -96,7 +106,12 @@ async def patch_sync_settings(
         body.stories_interval_minutes is not None
         and int(body.stories_interval_minutes) != before["stories_interval_minutes"]
     )
-    if stories_changed:
+    stories_enabled = (
+        body.stories_interval_minutes is not None
+        and not is_sync_disabled(int(body.stories_interval_minutes))
+    )
+    # Solo sync inmediato si se activa/cambia a un intervalo > 0 (no al desactivar).
+    if stories_changed and stories_enabled:
         apply_sync_schedules(stories_run_immediately=True)
         background_tasks.add_task(_sync_stories_for_user, user_id)
     else:

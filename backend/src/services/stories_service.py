@@ -17,7 +17,7 @@ from pony.orm import ObjectNotFound, db_session, flush
 from src.db import db
 from src.models import ApiConnection, Lead, StorySequence, StorySlide
 from src.schemas import StorySequenceIn
-from src.services.sync_settings_service import get_stories_interval_minutes
+from src.services.sync_settings_service import get_stories_interval_minutes, is_sync_disabled
 from src.story_sync_scheduler_ref import next_auto_sync_stories_run_time
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -781,13 +781,15 @@ class StoriesService:
         except ObjectNotFound:
             conn = None
         last = conn.last_sync_at if conn else None
-        sched_next = next_auto_sync_stories_run_time()
-        if sched_next is not None:
-            next_sync = sched_next
+        interval_m = get_stories_interval_minutes()
+        if is_sync_disabled(interval_m):
+            next_sync = None
         else:
-            next_sync = (
-                last + timedelta(minutes=get_stories_interval_minutes()) if last else None
-            )
+            sched_next = next_auto_sync_stories_run_time()
+            if sched_next is not None:
+                next_sync = sched_next
+            else:
+                next_sync = last + timedelta(minutes=interval_m) if last else None
 
         from src.services.instagram_token_utils import resolve_instagram_token_dates
 
@@ -927,7 +929,7 @@ class StoriesService:
                     "?fields=id,timestamp,media_type,media_url,thumbnail_url"
                 )
                 headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
-                stories_payload = _http_json(stories_url, headers=headers)
+                stories_payload = await asyncio.to_thread(_http_json, stories_url, headers)
                 stories = stories_payload.get("data")
                 story_rows = stories if isinstance(stories, list) else []
                 tz = AR_TZ
@@ -976,7 +978,9 @@ class StoriesService:
                             source_url = thumb_url if media_type == "VIDEO" and thumb_url else media_url or thumb_url
                             image_url = await download_story_image(source_url, user_id, story_id) if source_url else None
 
-                            metrics, perm_denied = _fetch_story_insights(story_id, access_token, headers)
+                            metrics, perm_denied = await asyncio.to_thread(
+                                _fetch_story_insights, story_id, access_token, headers
+                            )
                             if perm_denied:
                                 insights_permission_denied = True
                             print(f"[sync] insights para story {story_id}:", metrics)

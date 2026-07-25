@@ -78,12 +78,11 @@ function formatAgendaPointBadgeText(
       seq = lookups.sequences[`story:${sid}`] ?? lookups.sequences[sid]
     }
   }
-  if (!seq && /^\d+$/.test(k)) {
-    seq = lookups.sequences[k] ?? lookups.sequences[`story:${k}`]
-  }
   if (seq) return `[HISTORIA] · ${formatAgendaPointDate(seq.sequenceDate)}`
 
   if (/^story:\d+$/i.test(k)) return `[HISTORIA] · —`
+  // Sin catálogo cargado: mostrar tipo (el picker cachea fechas al elegir).
+  if (/^\d+$/.test(k)) return `[REEL] · —`
 
   if (k.length > LEGACY_AGENDA_SNIPPET_LEN) return `${k.slice(0, LEGACY_AGENDA_SNIPPET_LEN)}…`
   return k
@@ -433,80 +432,8 @@ export function LeadsPage() {
     }
   }, [ready, userId, syncing, month, toast, fetchLeads])
 
-  const loadAgendaLookups = useCallback(async () => {
-    if (!ready || !userId) return
-    const reels: Record<string, AgendaReelLookup> = {}
-    const sequences: Record<string, AgendaSequenceLookup> = {}
-    const youtube: Record<string, AgendaYoutubeLookup> = {}
-    try {
-      let page = 1
-      for (;;) {
-        const res = await apiFetch(`/reels?page=${page}&page_size=50&skip_agg=1`)
-        const data = (await res.json().catch(() => ({}))) as {
-          reels?: { id: string; title: string | null; published_at?: string | null }[]
-          total_pages?: number
-        }
-        if (!res.ok) break
-        for (const r of data.reels || []) {
-          reels[String(r.id)] = {
-            title: (r.title && r.title.trim()) || `Reel ${r.id}`,
-            publishedAt: r.published_at ?? null,
-          }
-        }
-        const tp = Math.max(1, data.total_pages ?? 1)
-        if (page >= tp) break
-        page += 1
-        if (page > 30) break
-      }
-      const sr = await apiFetch('/stories/sequences?all_months=true')
-      const seqData = (await sr.json().catch(() => [])) as {
-        id: number
-        sequence_date: string
-        title: string | null
-      }[]
-      if (sr.ok && Array.isArray(seqData)) {
-        for (const s of seqData) {
-          const meta = {
-            title:
-              (s.title && s.title.trim()) ||
-              (s.sequence_date ? `Historia ${s.sequence_date}` : `Historia #${s.id}`),
-            sequenceDate: s.sequence_date ?? null,
-          }
-          sequences[String(s.id)] = meta
-          sequences[`story:${s.id}`] = meta
-        }
-      }
-      let yp = 1
-      for (;;) {
-        const yr = await apiFetch(`/youtube/videos?page=${yp}&page_size=50&skip_agg=1`)
-        const yd = (await yr.json().catch(() => ({}))) as {
-          videos?: { id: string; title: string | null; published_at?: string | null }[]
-          total_pages?: number
-        }
-        if (!yr.ok) break
-        for (const v of yd.videos || []) {
-          const id = String(v.id)
-          const meta = {
-            title: (v.title && v.title.trim()) || `YouTube ${id}`,
-            publishedAt: v.published_at ?? null,
-          }
-          youtube[id] = meta
-          youtube[`youtube:${id}`] = meta
-        }
-        const ytp = Math.max(1, yd.total_pages ?? 1)
-        if (yp >= ytp) break
-        yp += 1
-        if (yp > 40) break
-      }
-      setAgendaLookups({ reels, sequences, youtube })
-    } catch {
-      /* noop */
-    }
-  }, [ready, userId])
-
-  useEffect(() => {
-    void loadAgendaLookups()
-  }, [loadAgendaLookups])
+  // Lookups de agenda: el picker carga catálogos al abrir; acá solo se cachean
+  // selecciones (onCache*). Evita waterfall de reels/stories/youtube al montar Leads.
 
   useEffect(() => {
     void fetchTeamMembers()

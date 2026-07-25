@@ -30,11 +30,7 @@ def _fmt_hora(call: datetime | None) -> str:
 
 
 def _leads_with_call(user_id: int) -> list[Lead]:
-    return [
-        l
-        for l in list(Lead.select())
-        if int(l.user_id) == user_id and l.call is not None
-    ]
+    return list(Lead.select(lambda l: l.user_id == user_id and l.call is not None))
 
 
 @db_session

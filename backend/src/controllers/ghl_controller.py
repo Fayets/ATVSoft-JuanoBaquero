@@ -229,7 +229,7 @@ def _apply_appointment_to_lead(
     # Buscar lead existente por ghl_contact_id en notas
     row: Lead | None = None
     if ghl_contact_id:
-        for r in [l for l in list(Lead.select()) if int(l.user_id) == user_id]:
+        for r in list(Lead.select(lambda l: l.user_id == user_id)):
             if f"GHL contact_id: {ghl_contact_id}" in str(r.notas or ""):
                 row = r
                 break
@@ -237,7 +237,7 @@ def _apply_appointment_to_lead(
     # Si no encontró por contact_id, buscar por email
     if row is None and email:
         email_key = email.strip().casefold()
-        for r in [l for l in list(Lead.select()) if int(l.user_id) == user_id]:
+        for r in list(Lead.select(lambda l: l.user_id == user_id)):
             if f"ghl email: {email_key}" in str(r.notas or "").casefold():
                 row = r
                 break

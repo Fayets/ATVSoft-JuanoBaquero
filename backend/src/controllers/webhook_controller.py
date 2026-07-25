@@ -50,8 +50,8 @@ def _find_lead_same_contact(user_id: int, ig_display: str) -> Lead | None:
         return None
     matches = [
         r
-        for r in list(Lead.select())
-        if int(r.user_id) == user_id and _norm_ig(r.ig or "") == ig_key
+        for r in list(Lead.select(lambda r: r.user_id == user_id))
+        if _norm_ig(r.ig or "") == ig_key
     ]
     if not matches:
         return None
@@ -369,7 +369,7 @@ def _find_lead_for_calendly(user_id: int, display_name: str, ig_hint: str) -> Le
     """Misma cuenta: prioriza coincidencia por IG, luego por nombre (normalizado)."""
     nkey = _norm_name_for_match(display_name)
     ig_key = _norm_ig(ig_hint)
-    rows = [r for r in list(Lead.select()) if int(r.user_id) == user_id]
+    rows = list(Lead.select(lambda r: r.user_id == user_id))
 
     def _ts(row: Lead) -> float:
         return row.created_at.timestamp() if row.created_at else 0.0

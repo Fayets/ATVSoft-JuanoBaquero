@@ -376,7 +376,10 @@ export default function HistoriasPage() {
   }
 
   useEffect(() => {
-    if (!syncStatus?.next_sync) return
+    if (!syncStatus?.next_sync) {
+      setCountdown('')
+      return
+    }
     const interval = setInterval(() => {
       const now = new Date()
       const next = new Date(syncStatus.next_sync as string)
@@ -738,11 +741,13 @@ export default function HistoriasPage() {
                 Último sync: {new Date(syncStatus.last_sync).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
               </span>
             )}
-            {countdown && (
+            {countdown ? (
               <span className="text-zinc-300">
                 Próximo en: <span className="font-mono text-white">{countdown}</span>
               </span>
-            )}
+            ) : syncStatus && !syncStatus.next_sync ? (
+              <span className="text-zinc-500">Auto-sync desactivado</span>
+            ) : null}
           </div>
           <div className={`mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${tokenStatusColor}`}>
             {tokenDaysLeft !== null ? (

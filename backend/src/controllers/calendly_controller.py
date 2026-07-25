@@ -61,7 +61,7 @@ def _uid_int(user_id: str) -> int:
 
 
 def _rows_for_user(user_id: int) -> list[Lead]:
-    return [r for r in list(Lead.select()) if int(r.user_id) == user_id]
+    return list(Lead.select(lambda r: r.user_id == user_id))
 
 
 def _uri_uuid(uri: str) -> str:
@@ -451,8 +451,8 @@ def calendly_auto_sync_status(
         next_run = None
 
     return {
-        "enabled": has_key,
-        "interval_hours": max(1, round(interval_minutes / 60)),
+        "enabled": has_key and int(interval_minutes) > 0,
+        "interval_hours": 0 if int(interval_minutes) <= 0 else max(1, round(interval_minutes / 60)),
         "interval_minutes": interval_minutes,
         "last_sync_at": last_sync.isoformat() + "Z" if last_sync else None,
         "last_check_at": last_check_at,

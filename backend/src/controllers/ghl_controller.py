@@ -321,6 +321,123 @@ def _ghl_contact_display_name(data: dict[str, Any] | None) -> str:
     return f"{first} {last}".strip()
 
 
+def _ghl_person_display_name(data: Any) -> str:
+    """Nombre completo desde dict GHL (user/assigned) o string ya resuelto."""
+    if isinstance(data, str):
+        return data.strip()
+    if isinstance(data, dict):
+        return _ghl_contact_display_name(data)
+    return ""
+
+
+def _looks_like_ghl_id(value: str) -> bool:
+    """IDs GHL suelen ser alfanuméricos sin espacios (ej. YlWd2wuCAZQzh2cH1fVZ)."""
+    s = (value or "").strip()
+    if not s or " " in s or "@" in s:
+        return False
+    return len(s) >= 8 and s.replace("-", "").replace("_", "").isalnum()
+
+
+def _ghl_owner_from_webhook_body(body: dict[str, Any]) -> str:
+    """Propietario de la cita en webhook workflow: body.user (objeto con name/firstName)."""
+    candidates: list[Any] = [
+        body.get("user"),
+        body.get("Propietario de la cita"),
+        body.get("assignedUser"),
+        body.get("assigned_user"),
+    ]
+    calendar = body.get("calendar") if isinstance(body.get("calendar"), dict) else {}
+    trigger = body.get("triggerData") if isinstance(body.get("triggerData"), dict) else {}
+    appointment = body.get("appointment") if isinstance(body.get("appointment"), dict) else {}
+    candidates.extend(
+        [
+            calendar.get("user"),
+            calendar.get("assignedUser"),
+            trigger.get("user"),
+            appointment.get("user"),
+            appointment.get("assignedUser"),
+        ]
+    )
+    for cand in candidates:
+        name = _ghl_person_display_name(cand)
+        if name and not _looks_like_ghl_id(name):
+            return name
+        # A veces viene solo el id en string; sin lookup en webhook → ignorar
+        if isinstance(cand, dict):
+            # dict sin name usable ya lo cubre _ghl_person_display_name
+            continue
+    return ""
+
+
+def _resolve_ghl_user_name(
+    client: httpx.Client,
+    token: str,
+    user_ref: Any,
+    cache: dict[str, str],
+) -> str:
+    """Resuelve assignedUserId / assignedTo → nombre completo (GET /users/{id})."""
+    if isinstance(user_ref, dict):
+        name = _ghl_person_display_name(user_ref)
+        if name and not _looks_like_ghl_id(name):
+            return name
+        user_id = str(
+            user_ref.get("id")
+            or user_ref.get("userId")
+            or user_ref.get("user_id")
+            or ""
+        ).strip()
+    else:
+        user_id = str(user_ref or "").strip()
+        if user_id and not _looks_like_ghl_id(user_id):
+            # Ya es un nombre legible
+            return user_id
+
+    if not user_id:
+        return ""
+    if user_id in cache:
+        return cache[user_id]
+
+    try:
+        time.sleep(_REQUEST_DELAY_S)
+        data = _ghl_get(client, token, f"/users/{user_id}")
+        user_obj = data.get("user") if isinstance(data.get("user"), dict) else data
+        name = _ghl_person_display_name(user_obj)
+    except Exception as exc:
+        print(f"[ghl] no se pudo resolver user {user_id}: {exc}", flush=True)
+        name = ""
+    cache[user_id] = name
+    return name
+
+
+def _ghl_owner_from_sync(
+    client: httpx.Client,
+    token: str,
+    appointment: dict[str, Any],
+    contact: dict[str, Any],
+    cache: dict[str, str],
+) -> str:
+    """Propietario en sync: event.assignedUserId (cita) → contact.assignedTo."""
+    # 1) Dueño de la cita (calendars/events)
+    for key in ("assignedUser", "assigned_user", "user"):
+        name = _ghl_person_display_name(appointment.get(key))
+        if name and not _looks_like_ghl_id(name):
+            return name
+    assigned_user_id = str(
+        appointment.get("assignedUserId")
+        or appointment.get("assigned_user_id")
+        or ""
+    ).strip()
+    if assigned_user_id:
+        name = _resolve_ghl_user_name(client, token, assigned_user_id, cache)
+        if name:
+            return name
+
+    # 2) Fallback: assignedTo del contacto (suele ser user id)
+    assigned_to = contact.get("assignedTo") or contact.get("assigned_to")
+    name = _resolve_ghl_user_name(client, token, assigned_to, cache)
+    return name
+
+
 @db_session
 def _apply_appointment_to_lead(
     user_id: int,
@@ -334,14 +451,17 @@ def _apply_appointment_to_lead(
     ig: str = "",
     formulario: dict[str, str] | None = None,
     ghl_appointment_id: str = "",
+    closer: str = "",
 ) -> str:
     """Upsert lead por `ghl_appointment_id` (event.id de /calendars/events).
 
     Si ya existe → actualiza call/nombre (y datos de contacto).
     Si no → crea un lead nuevo. Un contacto con N citas → N leads.
+    `closer` solo se escribe si viene no vacío (no pisa con "").
     """
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
     appt_id = (ghl_appointment_id or "").strip()
+    closer_name = (closer or "").strip()
     contact_marker = f"GHL contact_id: {ghl_contact_id}" if ghl_contact_id else ""
 
     row: Lead | None = None
@@ -385,6 +505,8 @@ def _apply_appointment_to_lead(
             row.telefono = phone
         if ig:
             row.ig = ig
+        if closer_name:
+            row.closer = closer_name
         if agendo_at is not None:
             row.agendo = agendo_at
         row.status = "Agendado"
@@ -416,6 +538,7 @@ def _apply_appointment_to_lead(
         ig=ig or "",
         origen="GHL",
         ghl_appointment_id=appt_id or None,
+        closer=closer_name,
         notas="\n".join(notas_parts),
         call=call_at,
         agendo=agendo_at or call_at,
@@ -459,6 +582,7 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
         with httpx.Client(timeout=300.0) as client:
             items = _fetch_contacts_with_appointments(client, token, location_id, calendar_id, sync_month)
             print(f"[ghl] fetch completado: {len(items)} items", flush=True)
+            user_name_cache: dict[str, str] = {}
             for item in items:
                 contact = item["contact"]
                 appointment = item["appointment"]
@@ -473,6 +597,9 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
                     appointment.get("dateAdded") or appointment.get("date_added")
                 )
                 ghl_appointment_id = _ghl_appointment_id(appointment)
+                closer = _ghl_owner_from_sync(
+                    client, token, appointment, contact, user_name_cache
+                )
                 try:
                     result = _apply_appointment_to_lead(
                         uid,
@@ -483,8 +610,9 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
                         agendo_at=agendo_at,
                         ghl_contact_id=ghl_contact_id,
                         ghl_appointment_id=ghl_appointment_id,
+                        closer=closer,
                     )
-                    print(f"[ghl] lead {result}: {name}", flush=True)
+                    print(f"[ghl] lead {result}: {name} closer={closer!r}", flush=True)
                     if result == "created":
                         created += 1
                     else:
@@ -520,12 +648,16 @@ async def ghl_webhook(request: Request):
 
     trigger_data_raw = body.get("triggerData") or {}
     calendar_raw = body.get("calendar") or {}
+    user_raw = body.get("user")
     print(f"[ghl webhook] triggerData={trigger_data_raw}", flush=True)
     print(f"[ghl webhook] calendar={calendar_raw}", flush=True)
+    print(f"[ghl webhook] user={user_raw}", flush=True)
 
     # Datos del contacto → columnas existentes
     contact_id = str(body.get("contact_id") or body.get("contactId") or "").strip()
     name = _ghl_contact_display_name(body if isinstance(body, dict) else None)
+    closer = _ghl_owner_from_webhook_body(body if isinstance(body, dict) else {})
+
     email = str(
         body.get("email")
         or body.get("Correo electrónico")
@@ -576,7 +708,7 @@ async def ghl_webhook(request: Request):
 
     print(
         f"[ghl webhook] name={name} email={email} phone={phone} ig={ig} "
-        f"call={call_at} calendar={calendar_id} formulario={formulario}",
+        f"closer={closer!r} call={call_at} calendar={calendar_id} formulario={formulario}",
         flush=True,
     )
 
@@ -620,8 +752,9 @@ async def ghl_webhook(request: Request):
             ig=ig,
             formulario=formulario,
             ghl_appointment_id=ghl_appointment_id,
+            closer=closer,
         )
-        print(f"[ghl webhook] lead {result}: {name} ig={ig}", flush=True)
+        print(f"[ghl webhook] lead {result}: {name} ig={ig} closer={closer!r}", flush=True)
         return {"status": "ok", "action": result}
     except Exception as exc:
         print(f"[ghl webhook] ERROR: {exc}", flush=True)

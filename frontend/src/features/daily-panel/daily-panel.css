@@ -270,6 +270,38 @@
   margin-bottom: 1.25rem;
 }
 
+.neo-panel__closer-filter {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.neo-panel__closer-filter-select {
+  min-width: 11rem;
+  max-width: 16rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--neo-border-dim);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--neo-text);
+  font-family: var(--neo-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  outline: none;
+  cursor: pointer;
+}
+
+.neo-panel__closer-filter-select:focus {
+  border-color: var(--neo-accent);
+  box-shadow: 0 0 0 2px var(--neo-accent-dim);
+}
+
+.neo-panel__closer-filter-select option {
+  background: #121214;
+  color: var(--neo-text);
+}
+
 .neo-panel__module-id {
   font-family: var(--neo-mono);
   font-size: 10px;

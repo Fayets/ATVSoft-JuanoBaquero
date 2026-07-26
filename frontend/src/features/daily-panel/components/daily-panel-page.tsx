@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useAuthUser } from '@/shared/hooks/use-auth-user'
 import { useToast } from '@/shared/components/toast'
 import { formatIsoDateDdMmYyyy } from '@/shared/lib/format-utils'
@@ -65,6 +65,8 @@ export function DailyPanelPage({
   const [manualCloser, setManualCloser] = useState('')
   const [manualSaving, setManualSaving] = useState(false)
   const [generatingReport, setGeneratingReport] = useState(false)
+  /** '' = todos; '__empty__' = sin closer asignado */
+  const [closerFilter, setCloserFilter] = useState('')
 
   // Closers / programas: una sola vez (no en cada cambio de fecha).
   useEffect(() => {
@@ -356,8 +358,40 @@ export function DailyPanelPage({
   }
 
   const fechaLabel = fecha ? formatIsoDateDdMmYyyy(fecha) : isAdmin ? formatIsoDateDdMmYyyy(selectedDate) : 'HOY'
+
+  const closerFilterOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const n of closerOptions) {
+      const t = n.trim()
+      if (t) names.add(t)
+    }
+    for (const c of calls) {
+      const t = (c.closer || '').trim()
+      if (t) names.add(t)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, 'es'))
+  }, [closerOptions, calls])
+
+  const hasEmptyCloser = useMemo(
+    () => calls.some((c) => !(c.closer || '').trim()),
+    [calls],
+  )
+
+  const filteredCalls = useMemo(() => {
+    if (!closerFilter) return calls
+    if (closerFilter === '__empty__') {
+      return calls.filter((c) => !(c.closer || '').trim())
+    }
+    const needle = closerFilter.trim().toLowerCase()
+    return calls.filter((c) => (c.closer || '').trim().toLowerCase() === needle)
+  }, [calls, closerFilter])
+
   const countLabel =
-    calls.length === 1 ? '1 llamada' : `${calls.length} llamadas`
+    closerFilter && filteredCalls.length !== calls.length
+      ? `${filteredCalls.length} de ${calls.length} llamadas`
+      : filteredCalls.length === 1
+        ? '1 llamada'
+        : `${filteredCalls.length} llamadas`
 
   return (
     <PanelShell>
@@ -413,10 +447,29 @@ export function DailyPanelPage({
           <h2 className="neo-panel__module-title">
             {isAdmin ? 'Llamadas del día' : 'Llamadas de hoy'}
           </h2>
+          <label className="neo-panel__closer-filter">
+            <span className="sr-only">Filtrar por closer</span>
+            <select
+              value={closerFilter}
+              onChange={(e) => setCloserFilter(e.target.value)}
+              className="neo-panel__closer-filter-select"
+              aria-label="Filtrar por closer"
+            >
+              <option value="">Todos los closers</option>
+              {closerFilterOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+              {hasEmptyCloser ? (
+                <option value="__empty__">Sin closer</option>
+              ) : null}
+            </select>
+          </label>
           <p className="neo-panel__module-hint">{countLabel}</p>
         </div>
         <DailyCallsTable
-          items={calls}
+          items={filteredCalls}
           closerOptions={closerOptions}
           programOptions={programOptions}
           defaultCloser={defaultCloser}

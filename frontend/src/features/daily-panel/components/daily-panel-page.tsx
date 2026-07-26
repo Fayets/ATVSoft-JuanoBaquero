@@ -341,24 +341,6 @@ export function DailyPanelPage({
     }
   }, [isAdmin, selectedDate, fecha, calls.length, toast])
 
-  if (!ready) {
-    return (
-      <PanelShell>
-        <div className="neo-panel__loading">Cargando…</div>
-      </PanelShell>
-    )
-  }
-
-  if (!userId) {
-    return (
-      <PanelShell>
-        <div className="neo-panel__empty">Iniciá sesión para ver el panel.</div>
-      </PanelShell>
-    )
-  }
-
-  const fechaLabel = fecha ? formatIsoDateDdMmYyyy(fecha) : isAdmin ? formatIsoDateDdMmYyyy(selectedDate) : 'HOY'
-
   const closerFilterOptions = useMemo(() => {
     const names = new Set<string>()
     for (const n of closerOptions) {
@@ -386,6 +368,23 @@ export function DailyPanelPage({
     return calls.filter((c) => (c.closer || '').trim().toLowerCase() === needle)
   }, [calls, closerFilter])
 
+  if (!ready) {
+    return (
+      <PanelShell>
+        <div className="neo-panel__loading">Cargando…</div>
+      </PanelShell>
+    )
+  }
+
+  if (!userId) {
+    return (
+      <PanelShell>
+        <div className="neo-panel__empty">Iniciá sesión para ver el panel.</div>
+      </PanelShell>
+    )
+  }
+
+  const fechaLabel = fecha ? formatIsoDateDdMmYyyy(fecha) : isAdmin ? formatIsoDateDdMmYyyy(selectedDate) : 'HOY'
   const countLabel =
     closerFilter && filteredCalls.length !== calls.length
       ? `${filteredCalls.length} de ${calls.length} llamadas`

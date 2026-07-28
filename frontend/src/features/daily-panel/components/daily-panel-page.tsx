@@ -21,6 +21,7 @@ import {
   patchLeadStatus,
   resolveDefaultCloser,
   buildCloserOptions,
+  syncGhlForDay,
 } from '../services/daily-panel-service'
 import {
   createAdminManualCall,
@@ -354,6 +355,44 @@ export function DailyPanelPage({
     }
   }, [selectedDate, fecha, calls.length, toast])
 
+  const handleRefresh = useCallback(async () => {
+    if (!ready || !userId || !metaReady) return
+    if (isAdmin && !adminToken) return
+    const day = selectedDate || todayIsoAr()
+    setLoading(true)
+    try {
+      const sync = await syncGhlForDay(day)
+      const data = isAdmin
+        ? await getAdminDailyCalls(day, adminToken!, closerOptions, defaultCloser)
+        : await getDailyCalls(closerOptions, defaultCloser, day)
+      setFecha(data.fecha)
+      setCalls(data.llamadas)
+      const parts = [
+        sync.created ? `${sync.created} nuevas` : null,
+        sync.updated ? `${sync.updated} actualizadas` : null,
+      ].filter(Boolean)
+      toast(
+        parts.length > 0
+          ? `GHL ${day}: ${parts.join(', ')}.`
+          : `GHL ${day}: sin cambios.`,
+      )
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Error al sincronizar GHL.')
+    } finally {
+      setLoading(false)
+    }
+  }, [
+    ready,
+    userId,
+    metaReady,
+    selectedDate,
+    isAdmin,
+    adminToken,
+    closerOptions,
+    defaultCloser,
+    toast,
+  ])
+
   const shiftDay = useCallback((delta: number) => {
     setSelectedDate((prev) => addDaysIso(prev || todayIsoAr(), delta))
   }, [])
@@ -473,8 +512,9 @@ export function DailyPanelPage({
           <button
             type="button"
             disabled={loading}
-            onClick={() => void fetchCalls()}
+            onClick={() => void handleRefresh()}
             className="neo-panel__btn neo-panel__btn--ghost"
+            title="Sincroniza las agendas de GHL del día seleccionado"
           >
             {loading ? 'Actualizando…' : 'Actualizar'}
           </button>

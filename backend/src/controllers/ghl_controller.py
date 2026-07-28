@@ -4,7 +4,7 @@ import calendar
 import time
 import traceback
 from collections.abc import Iterator
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as dt_time, timezone
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -28,6 +28,8 @@ _GHL_NAIVE_TZ = ZoneInfo("America/Bogota")
 
 class GHLSyncRequest(BaseModel):
     month: str | None = Field(default=None, description="YYYY-MM opcional para filtrar appointments")
+    fecha: str | None = Field(default=None, description="YYYY-MM-DD: sync solo ese día (prioridad sobre month)")
+
 
 def require_user_id(
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
@@ -54,6 +56,15 @@ def _parse_month(month: str) -> tuple[int, int]:
         raise HTTPException(status_code=400, detail="month debe tener formato YYYY-MM.")
     return year, mon
 
+
+def _parse_fecha(raw: str) -> date:
+    try:
+        y, m, d = (int(p) for p in raw.strip().split("-", 2))
+        return date(y, m, d)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="fecha debe tener formato YYYY-MM-DD.") from e
+
+
 def _month_bounds_ms(month: str) -> tuple[int, int]:
     """Inicio/fin del mes en America/Bogota → epoch ms (requerido por /calendars/events)."""
     year, mon = _parse_month(month)
@@ -62,6 +73,14 @@ def _month_bounds_ms(month: str) -> tuple[int, int]:
     end = datetime(year, mon, last_day, 23, 59, 59, 999000, tzinfo=_GHL_NAIVE_TZ)
     return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
 
+
+def _day_bounds_ms(fecha: date) -> tuple[int, int]:
+    """Inicio/fin del día civil en America/Bogota → epoch ms."""
+    start = datetime.combine(fecha, dt_time.min, tzinfo=_GHL_NAIVE_TZ)
+    end = datetime.combine(fecha, dt_time.max, tzinfo=_GHL_NAIVE_TZ)
+    return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+
+
 def _start_time_in_month(start_time_raw: str, month: str) -> bool:
     """True si startTime cae en YYYY-MM según calendario Colombia (no comparación de strings)."""
     dt_utc = _parse_ghl_datetime(start_time_raw)
@@ -69,6 +88,16 @@ def _start_time_in_month(start_time_raw: str, month: str) -> bool:
         return False
     local = dt_utc.replace(tzinfo=timezone.utc).astimezone(_GHL_NAIVE_TZ)
     return f"{local.year:04d}-{local.month:02d}" == month
+
+
+def _start_time_on_day(start_time_raw: str, fecha: date) -> bool:
+    """True si startTime cae en YYYY-MM-DD (America/Bogota)."""
+    dt_utc = _parse_ghl_datetime(start_time_raw)
+    if dt_utc is None:
+        return False
+    local = dt_utc.replace(tzinfo=timezone.utc).astimezone(_GHL_NAIVE_TZ)
+    return local.date() == fecha
+
 
 def _parse_ghl_datetime(raw: str | None) -> datetime | None:
     """Normaliza startTime GHL → UTC naive para guardar en BD.
@@ -189,23 +218,26 @@ def _iter_contacts_with_appointments(
     token: str,
     location_id: str,
     calendar_id: str,
-    month: str | None,
+    month: str | None = None,
+    fecha: date | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Lista appointments del calendario vía GET /calendars/events (rango en ms).
 
-    Antes se paginaban todos los contactos + /contacts/{id}/appointments filtrando
-    por attributions.mediumId == calendar_id; eso descartaba casi todo y además
-    comparaba startTime con bounds string (`YYYY-MM-DD HH:MM:SS` vs `T`/Z),
-    lo que podía filtrar citas válidas en silencio.
+    Si `fecha` está set → solo ese día. Si no → mes (`month` o mes actual Colombia).
     """
-    if not month:
-        now = datetime.now(_GHL_NAIVE_TZ)
-        month = f"{now.year:04d}-{now.month:02d}"
+    if fecha is not None:
+        start_ms, end_ms = _day_bounds_ms(fecha)
+        range_label = fecha.isoformat()
+    else:
+        if not month:
+            now = datetime.now(_GHL_NAIVE_TZ)
+            month = f"{now.year:04d}-{now.month:02d}"
+        start_ms, end_ms = _month_bounds_ms(month)
+        range_label = month
 
-    start_ms, end_ms = _month_bounds_ms(month)
     print(
         f"[ghl] /calendars/events location={location_id} calendar={calendar_id} "
-        f"month={month} startMs={start_ms} endMs={end_ms}",
+        f"range={range_label} startMs={start_ms} endMs={end_ms}",
         flush=True,
     )
 
@@ -225,7 +257,7 @@ def _iter_contacts_with_appointments(
     print(f"[ghl] events crudos de API (antes de filtros): {raw_total} keys={list(data.keys())}", flush=True)
 
     skipped_cal = 0
-    skipped_month = 0
+    skipped_range = 0
     skipped_cancelled = 0
     skipped_no_contact = 0
     kept = 0
@@ -245,10 +277,12 @@ def _iter_contacts_with_appointments(
             skipped_cal += 1
             continue
 
-        # Contador "antes del filtro de mes" = todos los que pasaron calendar.
-        # El API ya filtra por rango ms; esto valida parsing local y descarta outliers.
-        if not _start_time_in_month(start_time_raw, month):
-            skipped_month += 1
+        if fecha is not None:
+            if not _start_time_on_day(start_time_raw, fecha):
+                skipped_range += 1
+                continue
+        elif month and not _start_time_in_month(start_time_raw, month):
+            skipped_range += 1
             continue
 
         status = str(
@@ -273,10 +307,10 @@ def _iter_contacts_with_appointments(
         }
 
     after_calendar = raw_total - skipped_cal
-    after_month = after_calendar - skipped_month
+    after_range = after_calendar - skipped_range
     print(
-        f"[ghl] filtro mes: antes={after_calendar} después={after_month} "
-        f"(skipped_month={skipped_month} skipped_cal={skipped_cal} "
+        f"[ghl] filtro rango: antes={after_calendar} después={after_range} "
+        f"(skipped_range={skipped_range} skipped_cal={skipped_cal} "
         f"skipped_cancelled={skipped_cancelled} skipped_no_contact={skipped_no_contact})",
         flush=True,
     )
@@ -288,9 +322,14 @@ def _fetch_contacts_with_appointments(
     token: str,
     location_id: str,
     calendar_id: str,
-    month: str | None,
+    month: str | None = None,
+    fecha: date | None = None,
 ) -> list[dict[str, Any]]:
-    return list(_iter_contacts_with_appointments(client, token, location_id, calendar_id, month))
+    return list(
+        _iter_contacts_with_appointments(
+            client, token, location_id, calendar_id, month=month, fecha=fecha
+        )
+    )
 
 def _ghl_appointment_id(event: dict[str, Any] | None) -> str:
     if not isinstance(event, dict):
@@ -568,9 +607,18 @@ def sync_ghl(
     user_id: Annotated[str, Depends(require_user_id)],
     body: GHLSyncRequest | None = None,
     month: str | None = Query(default=None, description="YYYY-MM opcional"),
+    fecha: str | None = Query(default=None, description="YYYY-MM-DD: sync solo ese día"),
 ):
     uid = _uid_int(user_id)
-    sync_month = (body.month.strip() if body and body.month else None) or (month.strip() if month else None)
+    sync_fecha_raw = (body.fecha.strip() if body and body.fecha else None) or (
+        fecha.strip() if fecha else None
+    )
+    sync_fecha = _parse_fecha(sync_fecha_raw) if sync_fecha_raw else None
+    sync_month = None
+    if sync_fecha is None:
+        sync_month = (body.month.strip() if body and body.month else None) or (
+            month.strip() if month else None
+        )
 
     with db_session:
         try:
@@ -584,17 +632,44 @@ def sync_ghl(
         if not token or not location_id or not calendar_id:
             raise HTTPException(status_code=400, detail="Faltan credenciales GHL.")
 
-    background_tasks.add_task(_run_ghl_sync, uid, token, location_id, calendar_id, sync_month)
-    return {"status": "started", "month": sync_month, "message": "Sync iniciado en background. Los leads aparecerán en minutos."}
+    # Sync de un día: sincrónico (botón Actualizar del panel diario).
+    if sync_fecha is not None:
+        result = _run_ghl_sync(uid, token, location_id, calendar_id, month=None, fecha=sync_fecha)
+        return {
+            "status": "ok",
+            "fecha": sync_fecha.isoformat(),
+            "created": result["created"],
+            "updated": result["updated"],
+            "message": f"Sync del {sync_fecha.isoformat()} listo.",
+        }
+
+    background_tasks.add_task(
+        _run_ghl_sync, uid, token, location_id, calendar_id, sync_month, None
+    )
+    return {
+        "status": "started",
+        "month": sync_month,
+        "message": "Sync iniciado en background. Los leads aparecerán en minutos.",
+    }
 
 
-def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync_month: str | None) -> None:
-    print(f"[ghl] sync background iniciado user_id={uid} month={sync_month}", flush=True)
+def _run_ghl_sync(
+    uid: int,
+    token: str,
+    location_id: str,
+    calendar_id: str,
+    month: str | None = None,
+    fecha: date | None = None,
+) -> dict[str, int]:
+    range_label = fecha.isoformat() if fecha is not None else (month or "mes-actual")
+    print(f"[ghl] sync iniciado user_id={uid} range={range_label}", flush=True)
     created = 0
     updated = 0
     try:
         with httpx.Client(timeout=300.0) as client:
-            items = _fetch_contacts_with_appointments(client, token, location_id, calendar_id, sync_month)
+            items = _fetch_contacts_with_appointments(
+                client, token, location_id, calendar_id, month=month, fecha=fecha
+            )
             print(f"[ghl] fetch completado: {len(items)} items", flush=True)
             user_name_cache: dict[str, str] = {}
             for item in items:
@@ -634,11 +709,14 @@ def _run_ghl_sync(uid: int, token: str, location_id: str, calendar_id: str, sync
                 except Exception as exc:
                     print(f"[ghl] ERROR guardando lead {name}: {exc}", flush=True)
         _touch_ghl_last_sync(uid)
-        print(f"[ghl] sync background listo created={created} updated={updated}", flush=True)
+        print(f"[ghl] sync listo created={created} updated={updated}", flush=True)
     except Exception as exc:
-        print(f"[ghl] ERROR en sync background: {type(exc).__name__}: {exc}", flush=True)
+        print(f"[ghl] ERROR en sync: {type(exc).__name__}: {exc}", flush=True)
         import traceback
         traceback.print_exc()
+        if fecha is not None:
+            raise
+    return {"created": created, "updated": updated}
 
 @db_session
 def _touch_ghl_last_sync(user_id: int) -> None:

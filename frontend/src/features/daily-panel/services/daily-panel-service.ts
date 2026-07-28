@@ -309,3 +309,21 @@ export async function generateCloserReportsForDay(fecha: string): Promise<{
     discord_sent: Boolean(data.discord_sent),
   }
 }
+
+/** Sync GHL solo del día indicado (sincrónico). */
+export async function syncGhlForDay(fecha: string): Promise<{ created: number; updated: number }> {
+  const q = new URLSearchParams({ fecha })
+  const res = await apiFetch(`/ghl/sync?${q}`, { method: 'POST' })
+  const raw = (await res.json().catch(() => ({}))) as {
+    detail?: string
+    created?: number
+    updated?: number
+  }
+  if (!res.ok) {
+    throw new Error(typeof raw.detail === 'string' ? raw.detail : 'No se pudo sincronizar GHL.')
+  }
+  return {
+    created: Number(raw.created) || 0,
+    updated: Number(raw.updated) || 0,
+  }
+}

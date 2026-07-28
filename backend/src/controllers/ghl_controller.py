@@ -4,7 +4,7 @@ import calendar
 import time
 import traceback
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -438,6 +438,17 @@ def _ghl_owner_from_sync(
     return name
 
 
+def _call_day_bogota(dt: datetime | None) -> date | None:
+    """Día calendario America/Bogota para un call UTC-naive (o aware)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        aware = dt.replace(tzinfo=timezone.utc)
+    else:
+        aware = dt
+    return aware.astimezone(_GHL_NAIVE_TZ).date()
+
+
 @db_session
 def _apply_appointment_to_lead(
     user_id: int,
@@ -455,8 +466,10 @@ def _apply_appointment_to_lead(
 ) -> str:
     """Upsert lead por `ghl_appointment_id` (event.id de /calendars/events).
 
-    Si ya existe → actualiza call/nombre (y datos de contacto).
-    Si no → crea un lead nuevo. Un contacto con N citas → N leads.
+    Match SOLO por appointment id (columna o notas). Nunca por contacto:
+    un mismo ghl_contact_id con otra cita → lead nuevo.
+    Si el appointment ya existe pero la fecha de call cambió de día (reagenda)
+    → se desvincula el lead viejo y se crea uno nuevo para la nueva cita.
     `closer` solo se escribe si viene no vacío (no pisa con "").
     """
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
@@ -470,27 +483,28 @@ def _apply_appointment_to_lead(
     if appt_id:
         row = Lead.get(user_id=user_id, ghl_appointment_id=appt_id)
 
-    # Fallbacks solo si hace falta (leads viejos sin columna)
-    if row is None and (appt_id or (ghl_contact_id and call_at is not None)):
-        appt_marker = f"GHL appointment_id: {appt_id}" if appt_id else ""
-        call_naive = call_at.replace(tzinfo=None) if call_at is not None else None
+    # 2) Fallback: id solo en notas (leads viejos sin columna). NUNCA matchear por contacto.
+    if row is None and appt_id:
+        appt_marker = f"GHL appointment_id: {appt_id}"
         for r in Lead.select(lambda l: l.user_id == user_id):
-            notas = str(r.notas or "")
-            # 2) Id guardado solo en notas
-            if appt_marker and appt_marker in notas:
+            if appt_marker in str(r.notas or ""):
                 row = r
                 break
-            # 3) Mismo contacto + misma hora
-            if (
-                row is None
-                and contact_marker
-                and contact_marker in notas
-                and call_naive is not None
-                and r.call is not None
-                and r.call.replace(tzinfo=None) == call_naive
-            ):
-                row = r
-                break
+
+    # Reagenda a otro día: conservar el lead viejo y crear uno nuevo.
+    if row is not None and call_at is not None and row.call is not None:
+        old_day = _call_day_bogota(row.call)
+        new_day = _call_day_bogota(call_at)
+        if old_day is not None and new_day is not None and old_day != new_day:
+            row.ghl_appointment_id = None
+            notas = str(row.notas or "")
+            if appt_id:
+                marker = f"GHL appointment_id: {appt_id}"
+                if marker in notas:
+                    row.notas = "\n".join(
+                        line for line in notas.splitlines() if line.strip() != marker
+                    ).strip()
+            row = None
 
     if row is not None:
         if display_name:
@@ -685,7 +699,11 @@ async def ghl_webhook(request: Request):
 
     # Datos de la cita
     trigger_data = body.get("triggerData") or {}
+    if not isinstance(trigger_data, dict):
+        trigger_data = {}
     calendar_data = body.get("calendar") or {}
+    if not isinstance(calendar_data, dict):
+        calendar_data = {}
 
     # startTime viene en calendar, no en triggerData
     start_time_raw = str(
@@ -695,13 +713,17 @@ async def ghl_webhook(request: Request):
         ""
     ).strip()
 
+    # Preferir calendarId: en muchos payloads `calendar.id` es el event/appointment id.
     calendar_id = str(
-        calendar_data.get("id") or
-        calendar_data.get("calendarId") or
-        trigger_data.get("calendarId") or
-        trigger_data.get("calendar_id") or
-        ""
+        calendar_data.get("calendarId")
+        or calendar_data.get("calendar_id")
+        or trigger_data.get("calendarId")
+        or trigger_data.get("calendar_id")
+        or ""
     ).strip()
+    if not calendar_id:
+        # Legacy: solo venía el id del calendario (sin appointment id separado).
+        calendar_id = str(calendar_data.get("id") or "").strip()
 
     call_at = _parse_ghl_datetime(start_time_raw) if start_time_raw else None
     agendo_at = datetime.utcnow()
@@ -733,12 +755,24 @@ async def ghl_webhook(request: Request):
         return {"status": "no_user"}
 
     appt_body = body.get("appointment") if isinstance(body.get("appointment"), dict) else {}
+    # Nunca usar el calendar_id como appointment id (colisionaba todos los webhooks).
     ghl_appointment_id = (
-        _ghl_appointment_id(calendar_data if isinstance(calendar_data, dict) else None)
-        or _ghl_appointment_id(trigger_data if isinstance(trigger_data, dict) else None)
+        str(
+            calendar_data.get("appointmentId")
+            or calendar_data.get("appointment_id")
+            or trigger_data.get("appointmentId")
+            or trigger_data.get("appointment_id")
+            or ""
+        ).strip()
         or _ghl_appointment_id(appt_body)
         or str(body.get("appointmentId") or body.get("appointment_id") or "").strip()
     )
+    for blob in (calendar_data, trigger_data):
+        if ghl_appointment_id:
+            break
+        cand = str(blob.get("id") or "").strip()
+        if cand and cand != calendar_id:
+            ghl_appointment_id = cand
 
     try:
         result = _apply_appointment_to_lead(

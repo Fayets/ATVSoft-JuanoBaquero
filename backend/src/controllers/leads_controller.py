@@ -19,7 +19,7 @@ from src.schemas import (
     LlamadasHoyOut,
     ManualCallCreateRequest,
 )
-from src.services.agent_closer_service import AR_TZ, list_llamadas_hoy
+from src.services.agent_closer_service import AR_TZ, list_llamadas_dia, list_llamadas_hoy
 from src.services.programs_services import (
     build_program_norm_price_map,
     program_price_usd_for_prog_raw,
@@ -442,13 +442,17 @@ def _parse_month_query(month: str | None) -> tuple[int, int] | None:
 @router.get("/llamadas-hoy", response_model=LlamadasHoyOut)
 def leads_llamadas_hoy(
     user_id: Annotated[str, Depends(require_user_id)],
+    fecha: date | None = Query(
+        default=None,
+        description="YYYY-MM-DD opcional; si se omite, usa el día actual (Argentina).",
+    ),
 ) -> LlamadasHoyOut:
     try:
         uid = int(user_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail="user_id inválido") from e
 
-    payload = list_llamadas_hoy(uid)
+    payload = list_llamadas_dia(uid, fecha) if fecha is not None else list_llamadas_hoy(uid)
     return LlamadasHoyOut(**payload)
 
 

@@ -388,11 +388,10 @@ export function DailyReportSection({ role }: Props) {
     return (
       <div className="space-y-4">
         <div className="glass-card glass-card--performant p-5">
-          <div className="mb-2 text-[13px] font-semibold">Reporte diario — Closer (automático)</div>
+          <div className="mb-2 text-[13px] font-semibold">Reporte diario — Closer</div>
           <p className="mb-4 text-[12px] leading-relaxed text-[var(--text3)]">
-            Se genera solo a las <strong className="text-[var(--text2)]">23:00 (Argentina)</strong> desde el panel
-            diario. Podés forzarlo antes con el botón de abajo. Completá status, calificación, pago y closer en cada
-            llamada.
+            Se genera solo cuando lo pedís con el botón de abajo (desde acá o desde el panel diario). Completá status,
+            calificación, pago y closer en cada llamada.
           </p>
           <div className="mb-4 grid grid-cols-2 gap-3">
             <div>

@@ -125,6 +125,52 @@
   text-transform: uppercase;
 }
 
+.neo-panel__day-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem 0.85rem;
+  margin-top: 0.65rem;
+}
+
+.neo-panel__day-nav-btn {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--neo-border-dim);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--neo-text2);
+  font-family: var(--neo-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.neo-panel__day-nav-btn:hover:not(:disabled) {
+  border-color: var(--neo-accent);
+  color: var(--neo-text);
+  background: var(--neo-accent-dim);
+}
+
+.neo-panel__day-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.neo-panel__day-nav-date {
+  margin: 0;
+  min-width: 7.5rem;
+  text-align: center;
+  font-family: var(--neo-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--neo-hot);
+}
+
 .neo-panel__header-meta {
   display: flex;
   flex-wrap: wrap;
@@ -270,10 +316,42 @@
   margin-bottom: 1.25rem;
 }
 
-.neo-panel__closer-filter {
+.neo-panel__name-search {
   display: flex;
   align-items: center;
   margin-left: auto;
+}
+
+.neo-panel__name-search-input {
+  min-width: 11rem;
+  max-width: 18rem;
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--neo-border-dim);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--neo-text);
+  font-family: var(--neo-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  outline: none;
+}
+
+.neo-panel__name-search-input::placeholder {
+  color: var(--neo-text2);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.neo-panel__name-search-input:focus {
+  border-color: var(--neo-accent);
+  box-shadow: 0 0 0 2px var(--neo-accent-dim);
+}
+
+.neo-panel__closer-filter {
+  display: flex;
+  align-items: center;
 }
 
 .neo-panel__closer-filter-select {

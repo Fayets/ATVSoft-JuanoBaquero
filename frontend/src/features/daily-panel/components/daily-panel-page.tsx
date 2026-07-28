@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useAuthUser } from '@/shared/hooks/use-auth-user'
 import { useToast } from '@/shared/components/toast'
 import { formatIsoDateDdMmYyyy } from '@/shared/lib/format-utils'
+import { addDaysIso } from '@/features/weekly-reports/services/weekly-reports-service'
 import {
   createManualCall,
   generateCloserReportsForDay,
@@ -32,6 +33,17 @@ import { DailyCallsTable } from './daily-calls-table'
 import '../daily-panel.css'
 import '../daily-panel-manual-call.css'
 
+const AR_TZ = 'America/Argentina/Buenos_Aires'
+
+function todayIsoAr(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: AR_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
 function PanelShell({ children }: { children: ReactNode }) {
   return (
     <div className="neo-panel">
@@ -51,7 +63,7 @@ export function DailyPanelPage({
   const isAdmin = mode === 'admin' && Boolean(adminToken)
   const { ready, userId } = useAuthUser()
   const { toast } = useToast()
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(todayIsoAr)
   const [fecha, setFecha] = useState('')
   const [calls, setCalls] = useState<DailyCall[]>([])
   const [closerOptions, setCloserOptions] = useState<string[]>([])
@@ -67,6 +79,7 @@ export function DailyPanelPage({
   const [generatingReport, setGeneratingReport] = useState(false)
   /** '' = todos; '__empty__' = sin closer asignado */
   const [closerFilter, setCloserFilter] = useState('')
+  const [nameSearch, setNameSearch] = useState('')
 
   // Closers / programas: una sola vez (no en cada cambio de fecha).
   useEffect(() => {
@@ -122,7 +135,7 @@ export function DailyPanelPage({
       try {
         const data = isAdmin
           ? await getAdminDailyCalls(selectedDate, adminToken!, closerOptions, defaultCloser)
-          : await getDailyCalls(closerOptions, defaultCloser)
+          : await getDailyCalls(closerOptions, defaultCloser, selectedDate)
         setFecha(data.fecha)
         setCalls(data.llamadas)
       } catch (e) {
@@ -316,7 +329,7 @@ export function DailyPanelPage({
   }, [manualName, manualHora, manualCloser, defaultCloser, toast, fetchCalls, isAdmin, adminToken, selectedDate])
 
   const handleGenerateReport = useCallback(async () => {
-    const reportDate = isAdmin ? selectedDate : fecha
+    const reportDate = selectedDate || fecha
     if (!reportDate) {
       toast('Esperá a que cargue el panel.')
       return
@@ -339,7 +352,11 @@ export function DailyPanelPage({
     } finally {
       setGeneratingReport(false)
     }
-  }, [isAdmin, selectedDate, fecha, calls.length, toast])
+  }, [selectedDate, fecha, calls.length, toast])
+
+  const shiftDay = useCallback((delta: number) => {
+    setSelectedDate((prev) => addDaysIso(prev || todayIsoAr(), delta))
+  }, [])
 
   const closerFilterOptions = useMemo(() => {
     const names = new Set<string>()
@@ -360,13 +377,19 @@ export function DailyPanelPage({
   )
 
   const filteredCalls = useMemo(() => {
-    if (!closerFilter) return calls
+    let result = calls
     if (closerFilter === '__empty__') {
-      return calls.filter((c) => !(c.closer || '').trim())
+      result = result.filter((c) => !(c.closer || '').trim())
+    } else if (closerFilter) {
+      const needle = closerFilter.trim().toLowerCase()
+      result = result.filter((c) => (c.closer || '').trim().toLowerCase() === needle)
     }
-    const needle = closerFilter.trim().toLowerCase()
-    return calls.filter((c) => (c.closer || '').trim().toLowerCase() === needle)
-  }, [calls, closerFilter])
+    const q = nameSearch.trim().toLowerCase()
+    if (q) {
+      result = result.filter((c) => (c.lead || '').toLowerCase().includes(q))
+    }
+    return result
+  }, [calls, closerFilter, nameSearch])
 
   if (!ready) {
     return (
@@ -384,9 +407,11 @@ export function DailyPanelPage({
     )
   }
 
-  const fechaLabel = fecha ? formatIsoDateDdMmYyyy(fecha) : isAdmin ? formatIsoDateDdMmYyyy(selectedDate) : 'HOY'
+  const activeDate = fecha || selectedDate
+  const fechaLabel = activeDate ? formatIsoDateDdMmYyyy(activeDate) : '—'
+  const isFiltered = Boolean(closerFilter || nameSearch.trim())
   const countLabel =
-    closerFilter && filteredCalls.length !== calls.length
+    isFiltered && filteredCalls.length !== calls.length
       ? `${filteredCalls.length} de ${calls.length} llamadas`
       : filteredCalls.length === 1
         ? '1 llamada'
@@ -399,8 +424,27 @@ export function DailyPanelPage({
           <h1 className="neo-panel__title">
             {isAdmin ? 'Corrección reportes' : 'Dashboard diario'}
           </h1>
+          <div className="neo-panel__day-nav" aria-label="Navegación de días">
+            <button
+              type="button"
+              className="neo-panel__day-nav-btn"
+              onClick={() => shiftDay(-1)}
+              disabled={loading}
+            >
+              ← Anterior
+            </button>
+            <p className="neo-panel__day-nav-date">{fechaLabel}</p>
+            <button
+              type="button"
+              className="neo-panel__day-nav-btn"
+              onClick={() => shiftDay(1)}
+              disabled={loading}
+            >
+              Siguiente →
+            </button>
+          </div>
           <p className="neo-panel__subtitle">
-            {fechaLabel} · Argentina
+            Argentina
             {isAdmin ? ' · modo admin' : ''}
           </p>
         </div>
@@ -422,11 +466,7 @@ export function DailyPanelPage({
             disabled={loading || generatingReport || calls.length === 0}
             onClick={() => void handleGenerateReport()}
             className="neo-panel__btn"
-            title={
-              isAdmin
-                ? 'Actualiza el reporte closer de la fecha seleccionada'
-                : 'Genera el reporte closer desde los datos del panel (como a las 23:00)'
-            }
+            title="Genera el reporte closer desde los datos del panel del día seleccionado"
           >
             {generatingReport ? 'Generando…' : 'Generar reporte'}
           </button>
@@ -443,9 +483,18 @@ export function DailyPanelPage({
 
       <section className="neo-panel__module">
         <div className="neo-panel__module-head">
-          <h2 className="neo-panel__module-title">
-            {isAdmin ? 'Llamadas del día' : 'Llamadas de hoy'}
-          </h2>
+          <h2 className="neo-panel__module-title">Llamadas del día</h2>
+          <label className="neo-panel__name-search">
+            <span className="sr-only">Buscar por nombre</span>
+            <input
+              type="search"
+              value={nameSearch}
+              onChange={(e) => setNameSearch(e.target.value)}
+              placeholder="Buscar por nombre…"
+              className="neo-panel__name-search-input"
+              aria-label="Buscar por nombre"
+            />
+          </label>
           <label className="neo-panel__closer-filter">
             <span className="sr-only">Filtrar por closer</span>
             <select

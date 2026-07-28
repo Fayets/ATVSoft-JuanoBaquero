@@ -63,8 +63,10 @@ function normalizeTeamCloser(closer: string, teamClosers: string[]): string | nu
 export async function getDailyCalls(
   teamClosers: string[],
   defaultCloser: string,
+  fecha?: string,
 ): Promise<DailyCallsResponse> {
-  const res = await apiFetch('/leads/llamadas-hoy')
+  const q = fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''
+  const res = await apiFetch(`/leads/llamadas-hoy${q}`)
   const raw = (await res.json().catch(() => ({}))) as DailyCallsResponse & {
     detail?: string
     llamadas?: ApiDailyCallRow[]

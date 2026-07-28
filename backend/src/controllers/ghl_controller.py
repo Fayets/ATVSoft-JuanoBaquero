@@ -1,6 +1,7 @@
 """Go High Level: sync manual de appointments vía API v2 (Private Integration Token)."""
 from __future__ import annotations
 import calendar
+import threading
 import time
 import traceback
 from collections.abc import Iterator
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from src.lead_formulario import extract_formulario_from_ghl_body, merge_formulario
 from src.models import ApiConnection, Lead
+from src.services.triajer_service import pick_next_triajer
 
 router = APIRouter(prefix="/ghl", tags=["ghl"], redirect_slashes=False)
 
@@ -25,6 +27,8 @@ _GHL_VERSION = "2021-07-28"
 _REQUEST_DELAY_S = 0.2
 # GHL manda startTime naive en hora del calendar location (Colombia).
 _GHL_NAIVE_TZ = ZoneInfo("America/Bogota")
+# Evita dos syncs GHL en paralelo (manual o auto).
+_GHL_SYNC_LOCK = threading.Lock()
 
 class GHLSyncRequest(BaseModel):
     month: str | None = Field(default=None, description="YYYY-MM opcional para filtrar appointments")
@@ -560,6 +564,10 @@ def _apply_appointment_to_lead(
             row.ig = ig
         if closer_name:
             row.closer = closer_name
+        if not (getattr(row, "triajer", None) or "").strip():
+            assigned = pick_next_triajer(user_id)
+            if assigned:
+                row.triajer = assigned
         if agendo_at is not None:
             row.agendo = agendo_at
         row.status = "Agendado"
@@ -592,6 +600,8 @@ def _apply_appointment_to_lead(
         origen="GHL",
         ghl_appointment_id=appt_id or None,
         closer=closer_name,
+        triajer=pick_next_triajer(user_id),
+        triaje_hecho=False,
         notas="\n".join(notas_parts),
         call=call_at,
         agendo=agendo_at or call_at,
@@ -660,7 +670,13 @@ def _run_ghl_sync(
     calendar_id: str,
     month: str | None = None,
     fecha: date | None = None,
+    *,
+    acquire_lock: bool = True,
 ) -> dict[str, int]:
+    if acquire_lock and not _GHL_SYNC_LOCK.acquire(blocking=False):
+        print("[ghl] sync skip: ya hay un sync en curso", flush=True)
+        return {"created": 0, "updated": 0, "skipped": 1}
+
     range_label = fecha.isoformat() if fecha is not None else (month or "mes-actual")
     print(f"[ghl] sync iniciado user_id={uid} range={range_label}", flush=True)
     created = 0
@@ -712,11 +728,76 @@ def _run_ghl_sync(
         print(f"[ghl] sync listo created={created} updated={updated}", flush=True)
     except Exception as exc:
         print(f"[ghl] ERROR en sync: {type(exc).__name__}: {exc}", flush=True)
-        import traceback
         traceback.print_exc()
         if fecha is not None:
             raise
+    finally:
+        if acquire_lock:
+            _GHL_SYNC_LOCK.release()
     return {"created": created, "updated": updated}
+
+
+@db_session
+def _list_ghl_creds() -> list[dict[str, Any]]:
+    """Usuarios con conexión GHL completa (token + location + calendar)."""
+    out: list[dict[str, Any]] = []
+    for conn in ApiConnection.select(lambda c: c.platform == "ghl"):
+        creds = conn.credentials if isinstance(conn.credentials, dict) else {}
+        token = str(creds.get("access_token") or "").strip()
+        location_id = str(creds.get("location_id") or "").strip()
+        calendar_id = str(creds.get("calendar_id") or "").strip()
+        if token and location_id and calendar_id:
+            out.append(
+                {
+                    "user_id": int(conn.user_id),
+                    "token": token,
+                    "location_id": location_id,
+                    "calendar_id": calendar_id,
+                }
+            )
+    return out
+
+
+def run_ghl_auto_sync_all_users() -> dict[str, int]:
+    """Sync silencioso del mes actual para todos los users con GHL.
+
+    Si ya hay un sync en curso → skip (no corre en paralelo).
+    """
+    if not _GHL_SYNC_LOCK.acquire(blocking=False):
+        print("[ghl] auto-sync skip: ya hay un sync en curso", flush=True)
+        return {"created": 0, "updated": 0, "skipped": 1}
+
+    created = 0
+    updated = 0
+    try:
+        print("[ghl] auto-sync iniciado", flush=True)
+        creds_list = _list_ghl_creds()
+        for creds in creds_list:
+            try:
+                result = _run_ghl_sync(
+                    creds["user_id"],
+                    creds["token"],
+                    creds["location_id"],
+                    creds["calendar_id"],
+                    month=None,  # mes actual (mismo que POST /ghl/sync sin month)
+                    fecha=None,
+                    acquire_lock=False,
+                )
+                created += int(result.get("created") or 0)
+                updated += int(result.get("updated") or 0)
+            except Exception as exc:
+                print(
+                    f"[ghl] auto-sync FAILED user={creds['user_id']}: {exc}",
+                    flush=True,
+                )
+        print(f"[ghl] auto-sync listo created={created} updated={updated}", flush=True)
+    except Exception as exc:
+        print(f"[ghl] auto-sync ERROR: {exc}", flush=True)
+        traceback.print_exc()
+    finally:
+        _GHL_SYNC_LOCK.release()
+    return {"created": created, "updated": updated}
+
 
 @db_session
 def _touch_ghl_last_sync(user_id: int) -> None:

@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/team", tags=["team"], redirect_slashes=False)
 discord_service = DiscordServices()
 
 DEFAULT_COMMISSION_PCT = 5.0
-VALID_ROLES = frozenset({"setter", "closer", "cash"})
+VALID_ROLES = frozenset({"setter", "closer", "cash", "triajer"})
 SEGUIMIENTO_MEMBER_ROLES = frozenset({"setter", "closer", "cash"})
 
 
@@ -398,10 +398,16 @@ def list_members(
             for m in pool
             if m.rol == "cash"
         ]
+        triajers = [
+            TeamMemberOut(id=m.id, nombre=m.nombre, rol=m.rol, activo=m.activo)
+            for m in pool
+            if m.rol == "triajer"
+        ]
         return {
             "setters": [s.model_dump() for s in setters],
             "closers": [c.model_dump() for c in closers],
             "cash": [x.model_dump() for x in cash_members],
+            "triajers": [t.model_dump() for t in triajers],
         }
 
 
@@ -412,7 +418,7 @@ def create_member(body: CreateTeamMemberBody, user_id: str = Depends(require_use
     if rol not in VALID_ROLES:
         raise HTTPException(
             status_code=400,
-            detail="rol debe ser 'setter', 'closer' o 'cash'.",
+            detail="rol debe ser 'setter', 'closer', 'cash' o 'triajer'.",
         )
     nombre = body.nombre.strip()
     if not nombre:

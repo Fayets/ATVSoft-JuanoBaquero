@@ -477,6 +477,8 @@ class LeadOut(BaseModel):
     owed: float = 0
     closer: str | None = None
     setter: str | None = None
+    triajer: str | None = None
+    triaje_hecho: bool | None = None
     notes: str | None = None
     date: str
     month: str | None = None
@@ -553,6 +555,8 @@ class LeadPatchRequest(BaseModel):
     )
     setter: str | None = None
     closer: str | None = None
+    triajer: str | None = None
+    triaje_hecho: bool | None = None
     calificacion_llamada: str | None = Field(
         default=None,
         description='"" | "calificado" | "descalificado" — panel diario.',
@@ -887,6 +891,8 @@ class AgentLlamadaHoyItemOut(BaseModel):
     hora: str
     lead: str
     closer: str
+    triajer: str = ""
+    triaje_hecho: bool = False
     link_llamada: str
     status: str
     payment: float = 0

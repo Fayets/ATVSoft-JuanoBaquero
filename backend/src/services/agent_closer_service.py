@@ -93,6 +93,8 @@ def _llamada_item(l: Lead) -> dict:
         "hora": _fmt_hora(l.call),
         "lead": (l.nombre or "").strip(),
         "closer": (l.closer or "").strip(),
+        "triajer": (getattr(l, "triajer", None) or "").strip(),
+        "triaje_hecho": bool(getattr(l, "triaje_hecho", False)),
         "link_llamada": (l.link_llamada or "").strip(),
         "status": status,
         "payment": float(l.pago or 0),

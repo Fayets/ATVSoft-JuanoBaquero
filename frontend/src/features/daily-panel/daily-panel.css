@@ -19,9 +19,9 @@
   --neo-mono: var(--font-mono), 'JetBrains Mono', 'SF Mono', monospace;
   --neo-col-gap: 1rem;
   --neo-cols:
-    3.25rem minmax(5.5rem, 1.05fr) minmax(6.25rem, 0.95fr) minmax(4.75rem, 0.85fr)
-    minmax(6.75rem, 0.95fr) minmax(7.25rem, 0.9fr) minmax(6.25rem, 0.9fr) minmax(6.25rem, 0.9fr)
-    minmax(4.5rem, 0.65fr) minmax(4.5rem, 0.65fr);
+    3.25rem minmax(5rem, 0.95fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr) minmax(4.75rem, 0.7fr)
+    minmax(4.5rem, 0.75fr) minmax(6.25rem, 0.85fr) minmax(6.5rem, 0.8fr) minmax(5.75rem, 0.8fr)
+    minmax(5.75rem, 0.8fr) minmax(4.25rem, 0.6fr) minmax(4.25rem, 0.6fr);
 
   position: relative;
   margin: -1rem;
@@ -647,6 +647,26 @@
 .neo-calls__closer-select option {
   background: var(--neo-bg2);
   color: var(--neo-text);
+}
+
+.neo-calls__triaje-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-family: var(--neo-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--neo-text2);
+  user-select: none;
+}
+
+.neo-calls__triaje-check input {
+  accent-color: var(--neo-accent);
+  width: 0.9rem;
+  height: 0.9rem;
+  cursor: pointer;
 }
 
 .neo-calls__program-select {

@@ -8,6 +8,8 @@ type ApiDailyCallRow = {
   call?: string | null
   lead: string
   closer?: string
+  triajer?: string
+  triaje_hecho?: boolean
   link_llamada?: string
   call_link?: string
   status: string
@@ -36,6 +38,22 @@ export async function getTeamClosers(): Promise<string[]> {
   const active = (m: { nombre: string; activo?: boolean }) =>
     m.activo !== false && String(m.nombre || '').trim()
   return [...new Set((data.closers ?? []).filter(active).map((m) => m.nombre.trim()))].sort((a, b) =>
+    a.localeCompare(b, 'es'),
+  )
+}
+
+export async function getTeamTriajers(): Promise<string[]> {
+  const res = await apiFetch('/team/members')
+  const data = (await res.json().catch(() => ({}))) as {
+    triajers?: { nombre: string; activo?: boolean }[]
+    detail?: string
+  }
+  if (!res.ok) {
+    throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudieron cargar los triajers.')
+  }
+  const active = (m: { nombre: string; activo?: boolean }) =>
+    m.activo !== false && String(m.nombre || '').trim()
+  return [...new Set((data.triajers ?? []).filter(active).map((m) => m.nombre.trim()))].sort((a, b) =>
     a.localeCompare(b, 'es'),
   )
 }
@@ -91,6 +109,8 @@ export async function getDailyCalls(
       call: row.call?.trim() || null,
       lead: row.lead,
       closer: effective,
+      triajer: (row.triajer || '').trim(),
+      triaje_hecho: Boolean(row.triaje_hecho),
       call_link: row.link_llamada || row.call_link || '',
       status: row.status,
       calificacion_llamada: normalizeCalificacion(row.calificacion_llamada),
@@ -180,6 +200,61 @@ export async function patchLeadCloser(leadId: number, closer: string): Promise<v
         ? String((raw as { detail: unknown }).detail)
         : 'No se pudo actualizar el closer.'
     throw new Error(detail)
+  }
+}
+
+export async function patchLeadTriajer(leadId: number, triajer: string): Promise<void> {
+  const res = await apiFetch(`/leads/${encodeURIComponent(String(leadId))}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ triajer: triajer.trim() }),
+  })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail =
+      typeof raw === 'object' && raw && 'detail' in raw
+        ? String((raw as { detail: unknown }).detail)
+        : 'No se pudo actualizar el triajer.'
+    throw new Error(detail)
+  }
+}
+
+export async function patchLeadTriajeHecho(leadId: number, triajeHecho: boolean): Promise<void> {
+  const res = await apiFetch(`/leads/${encodeURIComponent(String(leadId))}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ triaje_hecho: triajeHecho }),
+  })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail =
+      typeof raw === 'object' && raw && 'detail' in raw
+        ? String((raw as { detail: unknown }).detail)
+        : 'No se pudo actualizar el triaje.'
+    throw new Error(detail)
+  }
+}
+
+/** Asigna triajer a todas las llamadas del día sin uno. */
+export async function assignTriajersForDay(fecha: string): Promise<{
+  assigned: number
+  pending: number
+}> {
+  const q = new URLSearchParams({ fecha })
+  const res = await apiFetch(`/leads/asignar-triajers-dia?${q}`, { method: 'POST' })
+  const raw = (await res.json().catch(() => ({}))) as {
+    detail?: string
+    assigned?: number
+    pending?: number
+  }
+  if (!res.ok) {
+    throw new Error(
+      typeof raw.detail === 'string' ? raw.detail : 'No se pudieron asignar triajers.',
+    )
+  }
+  return {
+    assigned: Number(raw.assigned) || 0,
+    pending: Number(raw.pending) || 0,
   }
 }
 

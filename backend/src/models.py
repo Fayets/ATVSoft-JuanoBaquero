@@ -180,9 +180,11 @@ class Lead(db.Entity):
     # Formulario GHL calendar (7 preguntas de calificación; contacto va en nombre/ig/email/telefono)
     formulario = Optional(Json, default=lambda: {})
     link_llamada = Optional(str, default="")
-    # Negocio (setter/closer = nombre en `teammember`, texto libre para compatibilidad)
+    # Negocio (setter/closer/triajer = nombre en `teammember`, texto libre para compatibilidad)
     setter = Optional(str, default="")
     closer = Optional(str, default="")
+    triajer = Optional(str, default="")
+    triaje_hecho = Optional(bool, default=False)
     dolores_setting = Optional(str, default="")
     dolores_llamada = Optional(str, default="")
     closer_report = Optional(str, default="")
@@ -221,7 +223,7 @@ class TeamMember(db.Entity):
     id = PrimaryKey(int, auto=True)
     user_id = Required(int, index=True)
     nombre = Required(str)
-    rol = Required(str)  # 'setter' | 'closer' | 'cash'
+    rol = Required(str)  # 'setter' | 'closer' | 'cash' | 'triajer'
     activo = Required(bool, default=True)
     created_at = Required(datetime, default=lambda: datetime.utcnow())
 

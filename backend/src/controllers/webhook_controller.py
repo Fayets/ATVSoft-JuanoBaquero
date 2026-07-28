@@ -5,6 +5,7 @@ from pony.orm import db_session
 
 from src.env_public import manychat_webhook_token
 from src.models import ApiConnection, Lead, ReelContent
+from src.services.triajer_service import pick_next_triajer
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"], redirect_slashes=False)
 
@@ -494,6 +495,8 @@ async def calendly_webhook(request: Request) -> dict[str, str]:
                 call=start_dt,
                 agendo_en="Chat",
                 notas="\n".join(notas_parts),
+                triajer=pick_next_triajer(user_id),
+                triaje_hecho=False,
             )
             _apply_calendly_form_fields(row, form_fields)
 

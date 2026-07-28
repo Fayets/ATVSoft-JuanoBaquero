@@ -21,6 +21,7 @@ from src.controllers.webhook_controller import (
     _parse_calendly_start_time,
 )
 from src.models import ApiConnection, Lead
+from src.services.triajer_service import pick_next_triajer
 
 router = APIRouter(prefix="/calendly", tags=["calendly"], redirect_slashes=False)
 
@@ -415,6 +416,8 @@ def _apply_invitee_to_lead(
         agendo=agendo_at or call_at,
         status="Agendado",
         agendo_en="Calendly",
+        triajer=pick_next_triajer(user_id),
+        triaje_hecho=False,
     )
     _apply_calendly_form_fields(row, fields)
     return "created"

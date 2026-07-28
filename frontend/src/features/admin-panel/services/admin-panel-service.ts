@@ -9,6 +9,8 @@ type ApiDailyCallRow = {
   call?: string | null
   lead: string
   closer?: string
+  triajer?: string
+  triaje_hecho?: boolean
   link_llamada?: string
   call_link?: string
   status: string
@@ -94,6 +96,8 @@ export async function getAdminDailyCalls(
       call: row.call?.trim() || null,
       lead: row.lead,
       closer: effective,
+      triajer: (row.triajer || '').trim(),
+      triaje_hecho: Boolean(row.triaje_hecho),
       call_link: row.link_llamada || row.call_link || '',
       status: row.status,
       calificacion_llamada: normalizeCalificacion(row.calificacion_llamada),

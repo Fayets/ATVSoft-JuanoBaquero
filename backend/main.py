@@ -54,6 +54,8 @@ from src.services.sync_settings_service import (
     is_sync_disabled,
 )
 from src.services.stories_service import StoriesService
+
+GHL_JOB_ID = "auto_sync_ghl"
 scheduler = AsyncIOScheduler()
 
 
@@ -144,6 +146,16 @@ async def auto_sync_calendly() -> None:
         print(f"[scheduler] Error general en auto_sync_calendly: {e}")
 
 
+async def auto_sync_ghl() -> None:
+    """Sync silencioso GHL del mes actual (cada 4 h)."""
+    from src.controllers.ghl_controller import run_ghl_auto_sync_all_users
+
+    try:
+        await asyncio.to_thread(run_ghl_auto_sync_all_users)
+    except Exception as e:
+        print(f"[scheduler] Error general en auto_sync_ghl: {e}")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -169,6 +181,14 @@ async def lifespan(_: FastAPI):
         id=CALENDLY_JOB_ID,
         replace_existing=True,
     )
+    scheduler.add_job(
+        auto_sync_ghl,
+        trigger=IntervalTrigger(hours=4),
+        id=GHL_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     bind_sync_scheduler(scheduler)
     apply_sync_schedules()
     scheduler.start()
@@ -178,6 +198,7 @@ async def lifespan(_: FastAPI):
         f"[scheduler] Auto-sync Calendly {_fmt_interval_log(get_calendly_interval_minutes())} "
         f"(check liviano → sync solo si hay novedades)"
     )
+    print("[scheduler] Auto-sync GHL cada 4 h (mes actual, silencioso)")
     yield
     scheduler.shutdown()
 

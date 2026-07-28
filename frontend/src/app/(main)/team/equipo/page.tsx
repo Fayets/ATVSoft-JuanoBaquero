@@ -21,9 +21,14 @@ function errMessage(data: unknown): string {
   return 'Error en la solicitud'
 }
 
-function mergeMembers(setters: Member[], closers: Member[], cashMembers: Member[]): Member[] {
-  const order: Record<string, number> = { setter: 0, closer: 1, cash: 2 }
-  return [...setters, ...closers, ...cashMembers].sort((a, b) => {
+function mergeMembers(
+  setters: Member[],
+  closers: Member[],
+  cashMembers: Member[],
+  triajers: Member[],
+): Member[] {
+  const order: Record<string, number> = { setter: 0, closer: 1, triajer: 2, cash: 3 }
+  return [...setters, ...closers, ...triajers, ...cashMembers].sort((a, b) => {
     const oa = order[a.rol] ?? 9
     const ob = order[b.rol] ?? 9
     if (oa !== ob) return oa - ob
@@ -40,7 +45,7 @@ export default function TeamEquipoEditPage() {
   const [savingId, setSavingId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
-  const [addRole, setAddRole] = useState<'setter' | 'closer'>('setter')
+  const [addRole, setAddRole] = useState<'setter' | 'closer' | 'triajer'>('setter')
   const [confirmDeleteMember, setConfirmDeleteMember] = useState<Member | null>(null)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
@@ -58,8 +63,18 @@ export default function TeamEquipoEditPage() {
         setMembers([])
         return
       }
-      const data = (await res.json()) as { setters?: Member[]; closers?: Member[]; cash?: Member[] }
-      const list = mergeMembers(data.setters ?? [], data.closers ?? [], data.cash ?? [])
+      const data = (await res.json()) as {
+        setters?: Member[]
+        closers?: Member[]
+        cash?: Member[]
+        triajers?: Member[]
+      }
+      const list = mergeMembers(
+        data.setters ?? [],
+        data.closers ?? [],
+        data.cash ?? [],
+        data.triajers ?? [],
+      )
       setMembers(list)
       const d: Record<number, { nombre: string }> = {}
       for (const m of list) {
@@ -178,12 +193,22 @@ export default function TeamEquipoEditPage() {
           >
             + Closer
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAddRole('triajer')
+              setShowAdd(true)
+            }}
+            className="rounded-lg border border-[var(--border2)] bg-transparent px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text2)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          >
+            + Triajer
+          </button>
         </div>
       </div>
 
       {members.length === 0 ? (
         <p className="text-[13px] text-[var(--text3)]">
-          No hay miembros. Usá + Setter o + Closer para agregar.
+          No hay miembros. Usá + Setter, + Closer o + Triajer para agregar.
         </p>
       ) : (
         <div className="glass-card glass-card--performant overflow-x-auto p-5">
@@ -201,6 +226,7 @@ export default function TeamEquipoEditPage() {
                 const dirty = d.nombre !== m.nombre
                 const isSetter = m.rol === 'setter'
                 const isCash = m.rol === 'cash'
+                const isTriajer = m.rol === 'triajer'
                 const busy = savingId === m.id || deletingId === m.id || confirmDeleteMember?.id === m.id
                 return (
                   <tr key={m.id} className="border-b border-[var(--border2)] last:border-0">
@@ -212,11 +238,19 @@ export default function TeamEquipoEditPage() {
                             ? 'rgba(34,197,94,0.12)'
                             : isSetter
                               ? 'rgba(212,168,67,0.15)'
-                              : 'rgba(230,57,70,0.12)',
-                          color: isCash ? 'var(--green)' : isSetter ? '#d4a843' : 'var(--accent)',
+                              : isTriajer
+                                ? 'rgba(59,130,246,0.14)'
+                                : 'rgba(230,57,70,0.12)',
+                          color: isCash
+                            ? 'var(--green)'
+                            : isSetter
+                              ? '#d4a843'
+                              : isTriajer
+                                ? '#60a5fa'
+                                : 'var(--accent)',
                         }}
                       >
-                        {isCash ? 'Cash' : isSetter ? 'Setter' : 'Closer'}
+                        {isCash ? 'Cash' : isSetter ? 'Setter' : isTriajer ? 'Triajer' : 'Closer'}
                       </span>
                     </td>
                     <td className="py-3 pr-4 align-middle">

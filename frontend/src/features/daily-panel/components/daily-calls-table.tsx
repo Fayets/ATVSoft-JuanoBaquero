@@ -26,11 +26,14 @@ import { buildCloserOptions } from '../services/daily-panel-service'
 type Props = {
   items: DailyCall[]
   closerOptions: string[]
+  triajerOptions: string[]
   programOptions: string[]
   defaultCloser: string
   loading: boolean
   onStatusChange: (leadId: number, status: string) => Promise<void>
   onCloserChange: (leadId: number, closer: string) => Promise<void>
+  onTriajerChange: (leadId: number, triajer: string) => Promise<void>
+  onTriajeHechoChange: (leadId: number, hecho: boolean) => Promise<void>
   onCalificacionChange: (
     leadId: number,
     calificacion: DailyCall['calificacion_llamada'],
@@ -148,6 +151,86 @@ const CloserSelect = memo(function CloserSelect({
         </option>
       ))}
     </select>
+  )
+})
+
+const TriajerSelect = memo(function TriajerSelect({
+  leadId,
+  triajer,
+  options,
+  onTriajerChange,
+}: {
+  leadId: number
+  triajer: string
+  options: string[]
+  onTriajerChange: (leadId: number, triajer: string) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+  const matched = options.find((o) => o.toLowerCase() === triajer.trim().toLowerCase())
+  const value = matched ?? (triajer.trim() || '')
+
+  const handleChange = async (e: ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value
+    if (next === value) return
+    setSaving(true)
+    try {
+      await onTriajerChange(leadId, next)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <select
+      value={value}
+      disabled={saving}
+      onChange={(e) => void handleChange(e)}
+      className="neo-calls__closer-select"
+      aria-label={`Triajer de lead ${leadId}`}
+    >
+      <option value="">—</option>
+      {value && !matched ? <option value={value}>{value}</option> : null}
+      {options.map((name) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  )
+})
+
+const TriajeCheckbox = memo(function TriajeCheckbox({
+  leadId,
+  hecho,
+  onChange,
+}: {
+  leadId: number
+  hecho: boolean
+  onChange: (leadId: number, hecho: boolean) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+
+  const toggle = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onChange(leadId, !hecho)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label className="neo-calls__triaje-check">
+      <input
+        type="checkbox"
+        checked={hecho}
+        disabled={saving}
+        onChange={() => void toggle()}
+        aria-label={`Triaje hecho para lead ${leadId}`}
+      />
+      <span>{hecho ? 'Hecho' : 'Pendiente'}</span>
+    </label>
   )
 })
 
@@ -433,10 +516,13 @@ const FathomLinkCell = memo(function FathomLinkCell({
 type RowProps = {
   row: DailyCall
   closerOptions: string[]
+  triajerOptions: string[]
   programOptions: string[]
   defaultCloser: string
   onStatusChange: Props['onStatusChange']
   onCloserChange: Props['onCloserChange']
+  onTriajerChange: Props['onTriajerChange']
+  onTriajeHechoChange: Props['onTriajeHechoChange']
   onCalificacionChange: Props['onCalificacionChange']
   onFathomLinkChange: Props['onFathomLinkChange']
   onPaymentChange: Props['onPaymentChange']
@@ -448,10 +534,13 @@ type RowProps = {
 const DailyCallRow = memo(function DailyCallRow({
   row,
   closerOptions,
+  triajerOptions,
   programOptions,
   defaultCloser,
   onStatusChange,
   onCloserChange,
+  onTriajerChange,
+  onTriajeHechoChange,
   onCalificacionChange,
   onFathomLinkChange,
   onPaymentChange,
@@ -475,6 +564,17 @@ const DailyCallRow = memo(function DailyCallRow({
         options={closerOptions}
         defaultCloser={defaultCloser}
         onCloserChange={onCloserChange}
+      />
+      <TriajerSelect
+        leadId={row.id}
+        triajer={row.triajer}
+        options={triajerOptions}
+        onTriajerChange={onTriajerChange}
+      />
+      <TriajeCheckbox
+        leadId={row.id}
+        hecho={row.triaje_hecho}
+        onChange={onTriajeHechoChange}
       />
       <FathomLinkCell leadId={row.id} value={row.call_link} onSave={onFathomLinkChange} />
       <StatusSelect leadId={row.id} status={row.status} onStatusChange={onStatusChange} />
@@ -506,11 +606,14 @@ const DailyCallRow = memo(function DailyCallRow({
 export const DailyCallsTable = memo(function DailyCallsTable({
   items,
   closerOptions,
+  triajerOptions,
   programOptions,
   defaultCloser,
   loading,
   onStatusChange,
   onCloserChange,
+  onTriajerChange,
+  onTriajeHechoChange,
   onCalificacionChange,
   onFathomLinkChange,
   onPaymentChange,
@@ -568,6 +671,8 @@ export const DailyCallsTable = memo(function DailyCallsTable({
         <div>Hora</div>
         <div>Lead</div>
         <div>Closer</div>
+        <div>Triajer</div>
+        <div>Triaje</div>
         <div>Link Fathom</div>
         <div>Status</div>
         <div>Calif. / Desc.</div>
@@ -581,10 +686,13 @@ export const DailyCallsTable = memo(function DailyCallsTable({
           key={row.id}
           row={row}
           closerOptions={closerSelectOptions}
+          triajerOptions={triajerOptions}
           programOptions={programOptions}
           defaultCloser={defaultCloser}
           onStatusChange={onStatusChange}
           onCloserChange={onCloserChange}
+          onTriajerChange={onTriajerChange}
+          onTriajeHechoChange={onTriajeHechoChange}
           onCalificacionChange={onCalificacionChange}
           onFathomLinkChange={onFathomLinkChange}
           onPaymentChange={onPaymentChange}

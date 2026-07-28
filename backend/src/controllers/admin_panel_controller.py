@@ -19,6 +19,7 @@ from src.services.admin_panel_service import (
     verify_admin_panel_token,
 )
 from src.services.agent_closer_service import AR_TZ, list_llamadas_dia
+from src.services.triajer_service import pick_next_triajer
 from src.services.programs_services import build_program_norm_price_map
 
 router = APIRouter(prefix="/api/admin/panel", tags=["admin-panel"], redirect_slashes=False)
@@ -106,6 +107,8 @@ def admin_panel_manual_call(
             status="Pendiente",
             estado="Pendiente",
             closer=(body.closer or "").strip(),
+            triajer=pick_next_triajer(uid),
+            triaje_hecho=False,
             fecha_bot=anchor,
             agendo=now_ar,
             agendo_en="Panel corrección",

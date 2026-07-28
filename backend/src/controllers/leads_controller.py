@@ -19,7 +19,15 @@ from src.schemas import (
     LlamadasHoyOut,
     ManualCallCreateRequest,
 )
-from src.services.agent_closer_service import AR_TZ, list_llamadas_dia, list_llamadas_hoy
+from src.services.agent_closer_service import (
+    AR_TZ,
+    BOGOTA_TZ,
+    _day_bounds_utc_naive,
+    _leads_call_between,
+    list_llamadas_dia,
+    list_llamadas_hoy,
+)
+from src.services.triajer_service import assign_triajers_to_leads, pick_next_triajer
 from src.services.programs_services import (
     build_program_norm_price_map,
     program_price_usd_for_prog_raw,
@@ -252,6 +260,8 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         owed=float(row.debe or 0),
         closer=(row.closer or "").strip() or None,
         setter=(row.setter or "").strip() or None,
+        triajer=(getattr(row, "triajer", None) or "").strip() or None,
+        triaje_hecho=bool(getattr(row, "triaje_hecho", False)),
         notes=row.notas,
         date=date_s,
         month=month_s,
@@ -414,6 +424,8 @@ def create_manual_call(
             status="Pendiente",
             estado="Pendiente",
             closer=(body.closer or "").strip(),
+            triajer=pick_next_triajer(uid),
+            triaje_hecho=False,
             fecha_bot=anchor,
             agendo=now_ar,
             agendo_en="Panel diario",
@@ -454,6 +466,41 @@ def leads_llamadas_hoy(
 
     payload = list_llamadas_dia(uid, fecha) if fecha is not None else list_llamadas_hoy(uid)
     return LlamadasHoyOut(**payload)
+
+
+@router.post("/asignar-triajers-dia")
+def asignar_triajers_dia(
+    user_id: Annotated[str, Depends(require_user_id)],
+    fecha: date | None = Query(
+        default=None,
+        description="YYYY-MM-DD; si se omite, día actual (Argentina).",
+    ),
+) -> dict[str, int | str]:
+    """Asigna triajer a todas las llamadas del día que aún no tienen uno."""
+    try:
+        uid = int(user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="user_id inválido") from e
+
+    target = fecha or datetime.now(AR_TZ).date()
+    with db_session:
+        inicio, fin = _day_bounds_utc_naive(target, BOGOTA_TZ)
+        rows = _leads_call_between(uid, inicio, fin)
+        missing = [l for l in rows if not (getattr(l, "triajer", None) or "").strip()]
+        if not missing:
+            return {"fecha": target.isoformat(), "assigned": 0, "pending": 0}
+        assigned = assign_triajers_to_leads(uid, missing)
+        if assigned == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No hay triajers activos. Creá uno en Equipo → + Triajer.",
+            )
+        still_pending = len(missing) - assigned
+        return {
+            "fecha": target.isoformat(),
+            "assigned": assigned,
+            "pending": still_pending,
+        }
 
 
 @router.get("/metrics", response_model=LeadsMetricsOut)
@@ -594,6 +641,10 @@ def patch_lead(
             row.setter = (str(data["setter"]).strip() if data["setter"] is not None else "") or ""
         if "closer" in data:
             row.closer = (str(data["closer"]).strip() if data["closer"] is not None else "") or ""
+        if "triajer" in data:
+            row.triajer = (str(data["triajer"]).strip() if data["triajer"] is not None else "") or ""
+        if "triaje_hecho" in data:
+            row.triaje_hecho = bool(data["triaje_hecho"])
         if "calificacion_llamada" in data:
             row.calificacion_llamada = _normalize_calificacion_llamada(data["calificacion_llamada"])
 

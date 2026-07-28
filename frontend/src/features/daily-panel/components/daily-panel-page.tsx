@@ -11,9 +11,13 @@ import {
   getDailyCalls,
   getProgramOptions,
   getTeamClosers,
+  getTeamTriajers,
+  assignTriajersForDay,
   patchLeadCalificacion,
   patchLeadCallLink,
   patchLeadCloser,
+  patchLeadTriajer,
+  patchLeadTriajeHecho,
   patchLeadOwed,
   patchLeadPayment,
   patchLeadProgramOffered,
@@ -68,6 +72,7 @@ export function DailyPanelPage({
   const [fecha, setFecha] = useState('')
   const [calls, setCalls] = useState<DailyCall[]>([])
   const [closerOptions, setCloserOptions] = useState<string[]>([])
+  const [triajerOptions, setTriajerOptions] = useState<string[]>([])
   const [programOptions, setProgramOptions] = useState<string[]>([''])
   const [defaultCloser, setDefaultCloser] = useState(DEFAULT_DAILY_CLOSER)
   const [loading, setLoading] = useState(true)
@@ -78,6 +83,7 @@ export function DailyPanelPage({
   const [manualCloser, setManualCloser] = useState('')
   const [manualSaving, setManualSaving] = useState(false)
   const [generatingReport, setGeneratingReport] = useState(false)
+  const [assigningTriajers, setAssigningTriajers] = useState(false)
   /** '' = todos; '__empty__' = sin closer asignado */
   const [closerFilter, setCloserFilter] = useState('')
   const [nameSearch, setNameSearch] = useState('')
@@ -91,16 +97,21 @@ export function DailyPanelPage({
     let cancelled = false
     ;(async () => {
       try {
-        const closers = await getTeamClosers().catch(() => [] as string[])
+        const [closers, triajers] = await Promise.all([
+          getTeamClosers().catch(() => [] as string[]),
+          getTeamTriajers().catch(() => [] as string[]),
+        ])
         if (cancelled) return
         const resolvedDefault = resolveDefaultCloser(closers)
         setCloserOptions(closers)
+        setTriajerOptions(triajers)
         setDefaultCloser(resolvedDefault)
         setManualCloser((prev) => prev || resolvedDefault)
         setMetaReady(true)
       } catch {
         if (!cancelled) {
           setCloserOptions([])
+          setTriajerOptions([])
           setDefaultCloser('')
           setMetaReady(true)
         }
@@ -189,6 +200,36 @@ export function DailyPanelPage({
         )
       } catch (e) {
         toast(e instanceof Error ? e.message : 'No se pudo guardar el closer.')
+        throw e
+      }
+    },
+    [toast],
+  )
+
+  const handleTriajerChange = useCallback(
+    async (leadId: number, triajer: string) => {
+      try {
+        await patchLeadTriajer(leadId, triajer)
+        setCalls((prev) =>
+          prev.map((c) => (c.id === leadId ? { ...c, triajer } : c)),
+        )
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo guardar el triajer.')
+        throw e
+      }
+    },
+    [toast],
+  )
+
+  const handleTriajeHechoChange = useCallback(
+    async (leadId: number, hecho: boolean) => {
+      try {
+        await patchLeadTriajeHecho(leadId, hecho)
+        setCalls((prev) =>
+          prev.map((c) => (c.id === leadId ? { ...c, triaje_hecho: hecho } : c)),
+        )
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo guardar el triaje.')
         throw e
       }
     },
@@ -393,6 +434,37 @@ export function DailyPanelPage({
     toast,
   ])
 
+  const handleAssignTriajers = useCallback(async () => {
+    const day = selectedDate || todayIsoAr()
+    const missing = calls.filter((c) => !(c.triajer || '').trim()).length
+    if (missing === 0) {
+      toast('Todas las llamadas del día ya tienen triajer.')
+      return
+    }
+    if (triajerOptions.length === 0) {
+      toast('No hay triajers. Creá uno en Equipo → + Triajer.')
+      return
+    }
+    setAssigningTriajers(true)
+    try {
+      const result = await assignTriajersForDay(day)
+      await fetchCalls(true)
+      if (result.assigned === 0) {
+        toast('No se asignó ningún triajer.')
+      } else {
+        toast(
+          result.assigned === 1
+            ? '1 triajer asignado.'
+            : `${result.assigned} triajers asignados.`,
+        )
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudieron asignar triajers.')
+    } finally {
+      setAssigningTriajers(false)
+    }
+  }, [selectedDate, calls, triajerOptions.length, toast, fetchCalls])
+
   const shiftDay = useCallback((delta: number) => {
     setSelectedDate((prev) => addDaysIso(prev || todayIsoAr(), delta))
   }, [])
@@ -511,6 +583,20 @@ export function DailyPanelPage({
           </button>
           <button
             type="button"
+            disabled={
+              loading ||
+              assigningTriajers ||
+              calls.length === 0 ||
+              calls.every((c) => Boolean((c.triajer || '').trim()))
+            }
+            onClick={() => void handleAssignTriajers()}
+            className="neo-panel__btn neo-panel__btn--ghost"
+            title="Asigna triajer a todas las llamadas del día que aún no tienen uno"
+          >
+            {assigningTriajers ? 'Asignando…' : 'Asignar triajers'}
+          </button>
+          <button
+            type="button"
             disabled={loading}
             onClick={() => void handleRefresh()}
             className="neo-panel__btn neo-panel__btn--ghost"
@@ -559,11 +645,14 @@ export function DailyPanelPage({
         <DailyCallsTable
           items={filteredCalls}
           closerOptions={closerOptions}
+          triajerOptions={triajerOptions}
           programOptions={programOptions}
           defaultCloser={defaultCloser}
           loading={loading}
           onStatusChange={handleStatusChange}
           onCloserChange={handleCloserChange}
+          onTriajerChange={handleTriajerChange}
+          onTriajeHechoChange={handleTriajeHechoChange}
           onCalificacionChange={handleCalificacionChange}
           onFathomLinkChange={handleFathomLinkChange}
           onPaymentChange={handlePaymentChange}

@@ -11,6 +11,7 @@ const titles: Record<string, string> = {
   '/historias': 'Historias',
   '/youtube': 'YouTube',
   '/leads': 'Leads',
+  '/cobranzas': 'Cobranzas',
   '/panel-diario': 'Dashboard diario',
   '/reporte-calls': 'Reporte calls',
   '/reportes-semanales': 'Reportes semanales',
@@ -71,7 +72,10 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     '/team/reportes',
     '/team/historial-reportes',
   ].includes(pathname)
-  const title = titles[pathname] || 'Dashboard'
+  const title =
+    titles[pathname] ||
+    (pathname.startsWith('/cobranzas/') ? 'Cobranzas' : null) ||
+    'Dashboard'
   const subtitle = subtitles[pathname]
 
   return (

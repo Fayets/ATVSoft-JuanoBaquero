@@ -31,7 +31,7 @@ export type WeekMetrics = {
   conversaciones: number[]
   shows: number[]
   cierres: number[]
-  /** Cash por bucket: reportes closer ventas (`ingreso`) + formularios seguimiento. El embudo mensual `ingresos` sigue siendo Pagó + seguimiento. */
+  /** Cash por bucket: reportes closer (`ingreso`) + seguimiento + cuotas. El embudo mensual `ingresos` = Pagó + seguimiento + cuotas. */
   ingresos: number[]
   /** Facturación en euros (mismo criterio que `funnel.facturacion` / `leadFacturacionUsd`) por bucket semanal. */
   facturacion: number[]
@@ -43,6 +43,8 @@ export type CashCollectedComposition = {
   pago: number
   /** Formularios de seguimiento del mes. */
   seguimiento: number
+  /** Historial de pagos / cuotas (Cobranzas → Agregar pago) del mes. */
+  cuotas: number
 }
 
 export type LeadsAnalytics = LeadsFunnel & {
@@ -249,6 +251,8 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   const range = monthRangeIso(month)
   let seguimientoEntries: { fecha: string; monto: number }[] = []
   let seguimientoTotal = 0
+  let cuotasEntries: { fecha: string; monto: number }[] = []
+  let cuotasTotal = 0
   let chatsReels = 0
   let chatsStories = 0
   try {
@@ -260,20 +264,26 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       range != null
         ? apiFetch(`/team/seguimiento-reports/month?month=${encodeURIComponent(month)}`)
         : Promise.resolve(new Response('', { status: 400 }))
+    const cuotasReq =
+      range != null
+        ? apiFetch(`/cobranzas/pagos/month?month=${encodeURIComponent(month)}`)
+        : Promise.resolve(new Response('', { status: 400 }))
     const reportsReq =
       range != null
         ? apiFetch(
             `/team/reports?desde=${encodeURIComponent(range.desde)}&hasta=${encodeURIComponent(range.hasta)}`,
           )
         : Promise.resolve(new Response('', { status: 400 }))
-    const [leadsRes, repRes, progRes, segRes, reelsMetricsRes, storiesMetricsRes] = await Promise.all([
-      leadsReq,
-      reportsReq,
-      programsReq,
-      segReq,
-      reelsMetricsReq,
-      storiesMetricsReq,
-    ])
+    const [leadsRes, repRes, progRes, segRes, cuotasRes, reelsMetricsRes, storiesMetricsRes] =
+      await Promise.all([
+        leadsReq,
+        reportsReq,
+        programsReq,
+        segReq,
+        cuotasReq,
+        reelsMetricsReq,
+        storiesMetricsReq,
+      ])
     if (leadsRes.ok) {
       const j = (await leadsRes.json().catch(() => ({}))) as { leads?: LeadRow[] }
       if (Array.isArray(j.leads)) leads.push(...j.leads)
@@ -298,6 +308,23 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       seguimientoTotal = Number(sj.total) || 0
       if (Array.isArray(sj.entries)) {
         seguimientoEntries = sj.entries
+          .map((x) => x as Record<string, unknown>)
+          .map((x) => ({
+            fecha: String(x.fecha ?? '').slice(0, 10),
+            monto: Number(x.monto) || 0,
+          }))
+          .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.fecha))
+      }
+    }
+
+    if (cuotasRes.ok) {
+      const cj = (await cuotasRes.json().catch(() => ({}))) as {
+        total?: unknown
+        entries?: unknown
+      }
+      cuotasTotal = Number(cj.total) || 0
+      if (Array.isArray(cj.entries)) {
+        cuotasEntries = cj.entries
           .map((x) => x as Record<string, unknown>)
           .map((x) => ({
             fecha: String(x.fecha ?? '').slice(0, 10),
@@ -385,8 +412,8 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   /** Ingreso declarado en reportes closer (solo fallback facturación si no hay programa en leads). */
   const ingresosReports = sumField(closerReports, 'ingreso')
   const cashFromLeadsPayments = leads.reduce((s, l) => s + (Number(l.payment) || 0), 0)
-  /** Cash collected = suma columna Pagó (`payment`) en leads del mes + montos de formularios de seguimiento. */
-  const cashCollected = cashFromLeadsPayments + seguimientoTotal
+  /** Cash collected = Pagó (leads) + seguimiento + cuotas (historial cobranzas). */
+  const cashCollected = cashFromLeadsPayments + seguimientoTotal + cuotasTotal
   const noShows = Math.max(0, agendas - shows)
 
   const catalogDefined = Object.keys(programPrices).length > 0
@@ -533,6 +560,19 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     byWeekDay.ingresos[w][dow] += monto
   })
 
+  cuotasEntries.forEach((e) => {
+    const monto = Number(e.monto) || 0
+    if (monto <= 0) return
+    const iso = e.fecha.slice(0, 10)
+    const date = new Date(`${iso}T12:00:00`)
+    if (Number.isNaN(date.getTime())) return
+    const dayOfMonth = date.getDate()
+    const w = Math.min(3, Math.floor((dayOfMonth - 1) / 7))
+    const dow = (date.getDay() + 6) % 7
+    byWeek.ingresos[w] += monto
+    byWeekDay.ingresos[w][dow] += monto
+  })
+
   // Facturación por día/semana: mismo `leadFacturacionUsd` que el embudo mensual (fecha vía `leadMetricDateIso`)
   leads.forEach((l) => {
     const bill = leadFacturacionUsd(l)
@@ -578,6 +618,7 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       cashCollectedComposition: {
         pago: cashFromLeadsPayments,
         seguimiento: seguimientoTotal,
+        cuotas: cuotasTotal,
       },
     },
   }

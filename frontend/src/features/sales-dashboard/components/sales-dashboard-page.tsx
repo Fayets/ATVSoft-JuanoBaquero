@@ -78,9 +78,11 @@ export function SalesDashboardPage() {
       void fetchData()
     }
     window.addEventListener('atvmkt-team-reports-changed', refresh)
+    window.addEventListener('atvmkt-cobranzas-changed', refresh)
     window.addEventListener('offered-programs-updated', refresh)
     return () => {
       window.removeEventListener('atvmkt-team-reports-changed', refresh)
+      window.removeEventListener('atvmkt-cobranzas-changed', refresh)
       window.removeEventListener('offered-programs-updated', refresh)
     }
   }, [fetchData])
@@ -146,13 +148,15 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
       return {
         title: 'Cash del mes',
         result: formatCash(d.ingresos),
-        formula: 'Cash collected = Pagó en leads + seguimiento del mes.',
+        formula: 'Cash collected = Pagó en leads + seguimiento + cuotas del mes.',
         data: [
           { label: 'Pago (columna Pagó en leads)', value: formatCash(d.cashCollectedComposition.pago) },
           { label: 'Seguimiento (formularios)', value: formatCash(d.cashCollectedComposition.seguimiento) },
+          { label: 'Cuotas (Cobranzas → Agregar pago)', value: formatCash(d.cashCollectedComposition.cuotas) },
           { label: 'Total cash del mes', value: formatCash(d.ingresos) },
         ],
-        source: 'Fuente: leads del mes (/leads) + reportes de seguimiento (/team/seguimiento-reports/month).',
+        source:
+          'Fuente: leads (/leads) + seguimiento (/team/seguimiento-reports/month) + cuotas (/cobranzas/pagos/month).',
       }
     case 'conversaciones':
       return {
@@ -1152,25 +1156,31 @@ function MensualView({ curr, prev, delta, month }: { curr: VDData; prev: VDData;
             <div className="text-[11px] text-[var(--text3)]">Facturacion</div>
             <div className="font-mono-num mt-1 text-3xl font-bold leading-none">{formatCash(curr.facturacion)}</div>
           </div>
-          <div>
-            <div className="text-[11px] text-[var(--text3)]">Cash Collected</div>
-            <div className="mt-1 flex items-stretch gap-2 sm:gap-3">
-              <div className="font-mono-num shrink-0 text-3xl font-bold leading-none text-[var(--green)] tabular-nums">
+          <div className="flex items-start gap-2.5 sm:gap-3">
+            <div>
+              <div className="text-[11px] text-[var(--text3)]">Cash Collected</div>
+              <div className="font-mono-num mt-1 shrink-0 text-3xl font-bold leading-none text-[var(--green)] tabular-nums">
                 {formatCash(curr.ingresos)}
               </div>
-              <div className="flex min-h-0 min-w-[11rem] flex-1 flex-col justify-between border-l border-[var(--border)] pl-2.5 sm:min-w-[12rem] sm:pl-3">
-                <div className="flex items-center justify-between gap-6 sm:gap-8">
-                  <span className="text-[11px] text-[var(--text3)]">Pago</span>
-                  <span className="font-mono-num text-[11px] font-semibold tabular-nums leading-none text-[var(--text2)]">
-                    {formatCash(curr.cashCollectedComposition.pago)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-6 sm:gap-8">
-                  <span className="text-[11px] text-[var(--text3)]">Seguimiento</span>
-                  <span className="font-mono-num text-[11px] font-semibold tabular-nums leading-none text-[var(--text2)]">
-                    {formatCash(curr.cashCollectedComposition.seguimiento)}
-                  </span>
-                </div>
+            </div>
+            <div className="mt-0.5 flex min-w-[11rem] flex-col gap-1 border-l border-[var(--border)] pl-2.5 sm:min-w-[12rem] sm:pl-3">
+              <div className="flex items-center justify-between gap-6 sm:gap-8">
+                <span className="text-[11px] leading-none text-[var(--text3)]">Pago</span>
+                <span className="font-mono-num text-[11px] font-semibold tabular-nums leading-none text-[var(--text2)]">
+                  {formatCash(curr.cashCollectedComposition.pago)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-6 sm:gap-8">
+                <span className="text-[11px] leading-none text-[var(--text3)]">Seguimiento</span>
+                <span className="font-mono-num text-[11px] font-semibold tabular-nums leading-none text-[var(--text2)]">
+                  {formatCash(curr.cashCollectedComposition.seguimiento)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-6 sm:gap-8">
+                <span className="text-[11px] leading-none text-[var(--text3)]">Cuotas</span>
+                <span className="font-mono-num text-[11px] font-semibold tabular-nums leading-none text-[var(--text2)]">
+                  {formatCash(curr.cashCollectedComposition.cuotas)}
+                </span>
               </div>
             </div>
           </div>

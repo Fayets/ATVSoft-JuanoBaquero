@@ -8,8 +8,10 @@ import { useToast } from '@/shared/components/toast'
 import { useAuthUser } from '@/shared/hooks/use-auth-user'
 import { useTimezone } from '@/shared/hooks/use-timezone'
 import { formatCash } from '@/shared/lib/format-utils'
+import { resolveMediaUrl } from '@/shared/lib/backend-public-url'
 import { formatCallDateTime } from '@/shared/lib/timezone'
 import { apiFetch, backendAuthHeaders, formatApiDetail } from '@/lib/api'
+import { uploadComprobante } from '@/features/cobranzas/services/upload-comprobante'
 import { AgendaPointPickerModal } from './agenda-point-picker-modal'
 import { FormularioLeadModal } from './formulario-lead-modal'
 import {
@@ -1493,6 +1495,84 @@ function LeadsTableCell({
         : col.key === 'email'
           ? leadEmailDisplay(lead)
           : raw
+  const { toast } = useToast()
+  const [uploadingProof, setUploadingProof] = useState(false)
+  const proofInputRef = useRef<HTMLInputElement>(null)
+
+  if (col.type === 'file' || col.key === 'comprobante_url') {
+    const url = value ? resolveMediaUrl(String(value)) : ''
+    const isPdf = url.toLowerCase().includes('.pdf')
+    return (
+      <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:underline"
+            title="Ver comprobante"
+          >
+            {isPdf ? (
+              'PDF'
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={url}
+                alt="Comprobante"
+                className="h-7 w-7 rounded object-cover border border-[var(--border)]"
+              />
+            )}
+          </a>
+        ) : (
+          <span className="text-[11px] text-[var(--text3)]">—</span>
+        )}
+        {!readOnly && (
+          <>
+            <input
+              ref={proofInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (!file) return
+                setUploadingProof(true)
+                try {
+                  const uploaded = await uploadComprobante(file)
+                  onSave(uploaded)
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : 'Error al subir')
+                } finally {
+                  setUploadingProof(false)
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={uploadingProof}
+              onClick={() => proofInputRef.current?.click()}
+              className="rounded px-1.5 py-0.5 text-[10px] text-[var(--text2)] hover:bg-[rgba(255,255,255,0.05)] disabled:opacity-40"
+              title="Subir comprobante"
+            >
+              {uploadingProof ? '…' : url ? 'Cambiar' : 'Subir'}
+            </button>
+            {url ? (
+              <button
+                type="button"
+                disabled={uploadingProof}
+                onClick={() => onSave(null)}
+                className="rounded p-0.5 text-[var(--text3)] hover:bg-[rgba(248,113,113,0.12)] hover:text-[#F87171]"
+                title="Quitar comprobante"
+              >
+                ×
+              </button>
+            ) : null}
+          </>
+        )}
+      </span>
+    )
+  }
 
   if (readOnly) {
     if (col.key === 'client_name') {

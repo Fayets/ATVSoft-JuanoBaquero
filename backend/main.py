@@ -26,6 +26,8 @@ from src.controllers.avatars_controller import router as avatars_router
 from src.controllers.keywords_controller import router as keywords_router
 from src.controllers.leads_controller import router as leads_router
 from src.controllers.hot_leads_controller import router as hot_leads_router
+from src.controllers.cobranzas_controller import router as cobranzas_router
+from src.controllers.media_controller import router as media_router
 from src.controllers.reels_controller import router as reels_router
 from src.controllers.stories_controller import router as stories_router
 from src.controllers.sync_settings_controller import router as sync_settings_router
@@ -233,6 +235,8 @@ app.include_router(avatars_router)
 app.include_router(leads_router)
 app.include_router(call_reports_router)
 app.include_router(hot_leads_router)
+app.include_router(cobranzas_router)
+app.include_router(media_router)
 app.include_router(keywords_router)
 app.include_router(reels_router)
 app.include_router(bio_router)

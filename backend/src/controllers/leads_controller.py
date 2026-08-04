@@ -9,7 +9,7 @@ from pony.orm import ObjectNotFound, db_session
 from src.lead_display_utils import lead_display_nombre
 from src.lead_formulario import merge_formulario, normalize_formulario
 from src.models import CallReport as CallReportEntity
-from src.models import Lead as LeadEntity, ReelContent, StorySequence, YoutubeContent
+from src.models import Lead as LeadEntity, LeadPayment, ReelContent, StorySequence, YoutubeContent
 from src.schemas import (
     LeadCreateRequest,
     LeadOut,
@@ -258,6 +258,7 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         revenue=float(price_catalog or 0),
         payment=float(row.pago or 0),
         owed=float(row.debe or 0),
+        comprobante_url=(getattr(row, "comprobante_url", None) or "").strip() or None,
         closer=(row.closer or "").strip() or None,
         setter=(row.setter or "").strip() or None,
         triajer=(getattr(row, "triajer", None) or "").strip() or None,
@@ -310,12 +311,10 @@ def list_leads(
 
     with db_session:
         norm_prices = build_program_norm_price_map(uid)
-        # Filtrar en query (evita cargar toda la tabla Lead).
-        if include_all:
-            q = LeadEntity.select(lambda r: r.user_id == uid)
-        else:
-            q = LeadEntity.select(lambda r: r.user_id == uid and r.agendo is not None)
-        rows = list(q)
+        # Filtro en Python: Pony 0.7.x no decompila bien `is not None` / cmp en Python 3.13.
+        rows = [r for r in list(LeadEntity.select()) if int(r.user_id) == uid]
+        if not include_all:
+            rows = [r for r in rows if r.agendo is not None]
         if month_key is not None:
             year_m, month_m = month_key
             rows = [
@@ -625,6 +624,8 @@ def patch_lead(
             row.pago = float(data["payment"] or 0)
         if "owed" in data:
             row.debe = float(data["owed"] or 0)
+        if "comprobante_url" in data:
+            row.comprobante_url = (data["comprobante_url"] or "").strip()
         if "notes" in data:
             row.notas = data["notes"] or ""
         if "dolores_setting" in data:
@@ -687,11 +688,14 @@ def delete_lead(
         if int(row.user_id) != uid:
             raise HTTPException(status_code=404, detail="Lead no encontrado.")
         nombre_snap = lead_display_nombre(row.nombre, row.ig) or (row.nombre or "").strip() or "Sin nombre"
-        for report in CallReportEntity.select(lambda r: r.lead_id == lid):
-            if int(report.user_id) != uid:
+        for report in list(CallReportEntity.select()):
+            if int(report.lead_id) != lid or int(report.user_id) != uid:
                 continue
             if not (report.lead_nombre or "").strip():
                 report.lead_nombre = nombre_snap
+        for pago in list(LeadPayment.select()):
+            if int(pago.lead_id) == lid and int(pago.user_id) == uid:
+                pago.delete()
         row.delete()
 
     return {"status": "ok", "id": str(lid)}

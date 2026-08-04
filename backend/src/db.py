@@ -1542,6 +1542,89 @@ def _migrate_postgres_lead_triajer() -> None:
         conn.close()
 
 
+def _migrate_postgres_comprobante_url() -> None:
+    """Agrega comprobante_url en lead y lead_payment."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            for sql in (
+                "ALTER TABLE lead ADD COLUMN IF NOT EXISTS comprobante_url TEXT DEFAULT ''",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS comprobante_url TEXT DEFAULT ''",
+            ):
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    pass
+    finally:
+        conn.close()
+
+
+def _migrate_postgres_lead_payment() -> None:
+    """Crea `lead_payment` (historial de pagos; no modifica Lead.pago/debe)."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lead_payment (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    lead_id INTEGER NOT NULL,
+                    monto DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    fecha DATE NOT NULL,
+                    nota TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+                )
+                """
+            )
+            try:
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_lead_payment_user_lead "
+                    "ON lead_payment (user_id, lead_id)"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_lead_payment_lead_fecha "
+                    "ON lead_payment (lead_id, fecha)"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
@@ -1573,6 +1656,8 @@ def init_db() -> None:
     _migrate_postgres_drop_lead_ingresos()
     _migrate_postgres_lead_ghl_appointment_id()
     _migrate_postgres_lead_triajer()
+    _migrate_postgres_lead_payment()
+    _migrate_postgres_comprobante_url()
     db.generate_mapping(create_tables=True)
     _migrate_agendo_en_iso_to_call()
     _migrate_agendo_en_default_chat_when_agendado()

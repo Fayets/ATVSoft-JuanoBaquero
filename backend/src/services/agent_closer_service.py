@@ -42,19 +42,24 @@ def _fmt_hora(call: datetime | None) -> str:
 
 
 def _leads_with_call(user_id: int) -> list[Lead]:
-    return list(Lead.select(lambda l: l.user_id == user_id and l.call is not None))
+    # Filtro en Python: Pony 0.7.x no decompila bien `is not None` en Python 3.13.
+    return [
+        l
+        for l in list(Lead.select())
+        if int(l.user_id) == user_id and l.call is not None
+    ]
 
 
 def _leads_call_between(user_id: int, inicio: datetime, fin: datetime) -> list[Lead]:
-    """Solo leads con `call` en [inicio, fin] (filtro en query, no en Python)."""
-    return list(
-        Lead.select(
-            lambda l: l.user_id == user_id
-            and l.call is not None
-            and l.call >= inicio
-            and l.call <= fin
-        )
-    )
+    """Solo leads con `call` en [inicio, fin]."""
+    # Filtro en Python: Pony 0.7.x no decompila bien `>=` / `<=` en Python 3.13.
+    return [
+        l
+        for l in list(Lead.select())
+        if int(l.user_id) == user_id
+        and l.call is not None
+        and inicio <= l.call <= fin
+    ]
 
 
 @db_session

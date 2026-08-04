@@ -475,6 +475,7 @@ class LeadOut(BaseModel):
     revenue: float = 0
     payment: float = 0
     owed: float = 0
+    comprobante_url: str | None = None
     closer: str | None = None
     setter: str | None = None
     triajer: str | None = None
@@ -544,6 +545,7 @@ class LeadPatchRequest(BaseModel):
     revenue: float | None = None
     payment: float | None = None
     owed: float | None = None
+    comprobante_url: str | None = None
     notes: str | None = None
     dolores_setting: str | None = None
     dolores_llamada: str | None = None
@@ -922,3 +924,77 @@ class AgentProximaLlamadaItemOut(BaseModel):
 
 class AgentProximasLlamadasOut(BaseModel):
     llamadas: list[AgentProximaLlamadaItemOut] = Field(default_factory=list)
+
+
+class LeadPaymentOut(BaseModel):
+    id: str
+    lead_id: str
+    monto: float = 0
+    fecha: str
+    nota: str = ""
+    comprobante_url: str | None = None
+    created_at: str
+
+
+class LeadPaymentCreateRequest(BaseModel):
+    monto: float = Field(..., gt=0)
+    fecha: str | None = Field(default=None, description="YYYY-MM-DD; default hoy")
+    nota: str | None = None
+    comprobante_url: str | None = None
+
+
+class LeadPaymentPatchRequest(BaseModel):
+    monto: float | None = Field(default=None, gt=0)
+    fecha: str | None = Field(default=None, description="YYYY-MM-DD")
+    nota: str | None = None
+    comprobante_url: str | None = None
+
+
+class CobranzaLeadOut(BaseModel):
+    """Lead deudor + resumen del historial de pagos (sin mutar Lead.pago/debe)."""
+
+    id: str
+    nombre: str = ""
+    ig: str = ""
+    telefono: str = ""
+    email: str = ""
+    avatar: str = ""
+    status: str = ""
+    closer: str = ""
+    setter: str = ""
+    programa_ofrecido: str = ""
+    # Referencia de la tabla leads (solo lectura en cobranzas)
+    pago: float = 0
+    debe: float = 0
+    comprobante_url: str | None = None
+    # Historial independiente
+    total_pagado_historial: float = 0
+    cantidad_pagos: int = 0
+
+
+class MediaUploadOut(BaseModel):
+    url: str
+
+
+class CobranzasListResponse(BaseModel):
+    deudores: list[CobranzaLeadOut] = Field(default_factory=list)
+
+
+class CobranzaPagoMonthEntryOut(BaseModel):
+    fecha: str
+    monto: float = 0
+    lead_id: str = ""
+    nota: str = ""
+
+
+class CobranzasMonthPagosOut(BaseModel):
+    """Suma de historial LeadPayment del mes (por fecha del pago)."""
+
+    month: str
+    total: float = 0
+    entries: list[CobranzaPagoMonthEntryOut] = Field(default_factory=list)
+
+
+class CobranzaPerfilOut(BaseModel):
+    lead: CobranzaLeadOut
+    pagos: list[LeadPaymentOut] = Field(default_factory=list)

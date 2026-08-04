@@ -54,6 +54,7 @@ const dataGroups: NavGroup[] = [
     title: 'Trackeo de ventas', icon: '💰',
     items: [
       { label: 'Leads', href: '/leads' },
+      { label: 'Cobranzas', href: '/cobranzas' },
       { label: 'Reporte calls', href: '/reporte-calls' },
       { label: 'Reportes semanales', href: '/reportes-semanales' },
     ],

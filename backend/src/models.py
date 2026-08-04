@@ -194,6 +194,8 @@ class Lead(db.Entity):
     # Ventas
     pago = Optional(float, default=0)
     debe = Optional(float, default=0)
+    # URL relativa bajo /media (ej. /media/comprobantes/1/uuid.jpg)
+    comprobante_url = Optional(str, default="")
     estado = Optional(str, default="")
     calificacion_llamada = Optional(str, default="")
     notas = Optional(str, default="")
@@ -360,4 +362,19 @@ class SeguimientoReport(db.Entity):
     fecha = Required(date)
     nombre_lead = Required(str)
     monto = Required(float, default=0)
+    created_at = Required(datetime, default=lambda: datetime.utcnow())
+
+
+class LeadPayment(db.Entity):
+    """Historial de pagos de un lead. Independiente de Lead.pago / Lead.debe."""
+
+    _table_ = "lead_payment"
+
+    id = PrimaryKey(int, auto=True)
+    user_id = Required(int, index=True)
+    lead_id = Required(int, index=True)
+    monto = Required(float, default=0)
+    fecha = Required(date)
+    nota = Optional(str, default="")
+    comprobante_url = Optional(str, default="")
     created_at = Required(datetime, default=lambda: datetime.utcnow())

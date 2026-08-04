@@ -95,6 +95,8 @@ export type Lead = {
   revenue: number
   payment: number
   owed: number
+  /** URL relativa /media/... del comprobante de pago */
+  comprobante_url?: string | null
   closer: string | null
   setter: string | null
   notes: string | null
@@ -121,7 +123,7 @@ export type ColumnDef = {
   label: string
   title?: string
   width: number
-  type: 'text' | 'number' | 'date' | 'select' | 'badge' | 'link' | 'currency'
+  type: 'text' | 'number' | 'date' | 'select' | 'badge' | 'link' | 'currency' | 'file'
   editable?: boolean
   options?: string[]
   colors?: Record<string, string>
@@ -286,6 +288,14 @@ export function buildColumns(
     { key: 'program_offered', label: 'Prog. comprado', width: 130, type: 'badge', editable: true, options: progOpts, colors: progColors, defaultVisible: true },
     { key: 'payment', label: 'Pagó', width: 100, type: 'currency', editable: true, defaultVisible: true },
     { key: 'owed', label: 'Debe', width: 100, type: 'currency', editable: true, defaultVisible: true },
+    {
+      key: 'comprobante_url',
+      label: 'Comprobante',
+      width: 120,
+      type: 'file',
+      editable: true,
+      defaultVisible: true,
+    },
     // Extras
     { key: 'revenue', label: 'Facturación', width: 110, type: 'currency', editable: true, defaultVisible: false },
     { key: 'date', label: 'Fecha', width: 110, type: 'date', editable: true, defaultVisible: false },

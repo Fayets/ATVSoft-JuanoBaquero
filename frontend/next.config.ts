@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
         source: '/api-backend/:path*',
         destination: `${backendInternal}/:path*`,
       },
+      {
+        source: '/media/:path*',
+        destination: `${backendInternal}/media/:path*`,
+      },
     ]
   },
 }

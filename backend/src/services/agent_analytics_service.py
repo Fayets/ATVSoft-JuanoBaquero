@@ -95,7 +95,12 @@ def _program_prices_display(user_id: int) -> dict[str, float]:
 def _leads_for_month(user_id: int, month: str) -> list[Lead]:
     month_key = _parse_month(month)
     with db_session:
-        rows = list(Lead.select(lambda r: r.user_id == user_id and r.agendo is not None))
+        # Filtro en Python: Pony 0.7.x no decompila bien `is not None` en Python 3.13.
+        rows = [
+            r
+            for r in list(Lead.select())
+            if int(r.user_id) == user_id and r.agendo is not None
+        ]
     return [r for r in rows if (mb := _lead_month_ar(r)) is not None and mb == month_key]
 
 

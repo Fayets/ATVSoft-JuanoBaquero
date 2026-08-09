@@ -55,6 +55,7 @@ class OfferedProgramOut(BaseModel):
     id: int
     name: str
     price_usd: float
+    duration_months: int | None = None
     sort_order: int
 
 
@@ -65,11 +66,13 @@ class OfferedProgramsListResponse(BaseModel):
 class OfferedProgramCreateRequest(BaseModel):
     name: str = ""
     price_usd: float = 0
+    duration_months: int | None = Field(default=None, ge=1, le=120)
 
 
 class OfferedProgramPatchRequest(BaseModel):
     name: str | None = None
     price_usd: float | None = None
+    duration_months: int | None = Field(default=None, ge=1, le=120)
     sort_order: int | None = None
 
 
@@ -802,6 +805,65 @@ class HotLeadPatchRequest(BaseModel):
     fecha: str | None = None
     status: str | None = None
     notas: str | None = None
+
+
+class CrmClientOut(BaseModel):
+    id: str
+    lead_id: str
+    full_name: str = ""
+    program_name: str = ""
+    program_duration_months: int | None = None
+    start_date: str | None = None
+    sale_status: str = "cerrado"
+    lead_status: str = ""
+    wins: list[str] = Field(default_factory=list)
+    notes: str = ""
+    progress_percent: float | None = None
+    end_date: str | None = None
+    months_elapsed: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    is_complete: bool = False
+    missing_fields: list[str] = Field(default_factory=list)
+    field_sources: dict[str, str] = Field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str | None = None
+
+
+class CrmClientsListResponse(BaseModel):
+    clients: list[CrmClientOut] = Field(default_factory=list)
+
+
+class CrmClientUpsertRequest(BaseModel):
+    lead_id: int = Field(ge=1)
+    full_name: str | None = None
+    program_name: str | None = None
+    program_duration_months: int | None = Field(default=None, ge=1, le=120)
+    start_date: str | None = Field(default=None, description="YYYY-MM-DD inicio del programa")
+    sale_status: str | None = None
+    wins: list[str] | None = None
+    notes: str | None = None
+
+
+class CrmClientPatchRequest(BaseModel):
+    full_name: str | None = None
+    program_name: str | None = None
+    program_duration_months: int | None = Field(default=None, ge=1, le=120)
+    start_date: str | None = None
+    sale_status: str | None = None
+    wins: list[str] | None = None
+    notes: str | None = None
+
+
+class CrmClientTrackingGroup(BaseModel):
+    key: str
+    label: str
+    description: str
+    clients: list[CrmClientOut] = Field(default_factory=list)
+
+
+class CrmClientTrackingResponse(BaseModel):
+    total_clients: int = 0
+    groups: list[CrmClientTrackingGroup] = Field(default_factory=list)
 
 
 class AgentResumenProgramaOut(BaseModel):

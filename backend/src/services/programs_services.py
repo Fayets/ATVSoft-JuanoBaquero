@@ -35,10 +35,12 @@ class ProgramsServices:
         return max(int(r.sort_order or 0) for r in rows) + 1
 
     def _to_out(self, row: OfferedProgram) -> OfferedProgramOut:
+        dur = row.duration_months
         return OfferedProgramOut(
             id=int(row.id),
             name=str(row.name or "").strip(),
             price_usd=float(row.price_usd or 0),
+            duration_months=int(dur) if dur is not None and int(dur) > 0 else None,
             sort_order=int(row.sort_order or 0),
         )
 
@@ -71,6 +73,7 @@ class ProgramsServices:
                     user_id=user_id,
                     name=name,
                     price_usd=price,
+                    duration_months=int(body.duration_months) if body.duration_months else None,
                     sort_order=self._next_sort_order(user_id),
                     created_at=datetime.now(timezone.utc),
                 )
@@ -104,6 +107,8 @@ class ProgramsServices:
                     if float(body.price_usd) < 0:
                         raise HTTPException(status_code=400, detail="El precio no puede ser negativo.")
                     row.price_usd = float(body.price_usd)
+                if body.duration_months is not None:
+                    row.duration_months = int(body.duration_months) if body.duration_months else None
                 if body.sort_order is not None:
                     row.sort_order = int(body.sort_order)
                 return self._to_out(row)
@@ -131,6 +136,26 @@ def normalize_program_lookup_key(name: str) -> str:
     t = unicodedata.normalize("NFD", (name or "").strip())
     t = "".join(c for c in t if unicodedata.category(c) != "Mn")
     return " ".join(t.casefold().split())
+
+
+def build_program_norm_duration_map(user_id: int) -> dict[str, int]:
+    """Duración en meses por nombre normalizado de programa (catálogo /programas)."""
+    rows = [p for p in list(OfferedProgram.select()) if int(p.user_id) == user_id]
+    out: dict[str, int] = {}
+    for p in rows:
+        nk = normalize_program_lookup_key(str(p.name or ""))
+        dur = p.duration_months
+        if nk and dur is not None and int(dur) > 0:
+            out[nk] = int(dur)
+    return out
+
+
+def program_duration_months_for_prog_raw(norm_durations: dict[str, int], programa: str | None) -> int | None:
+    raw = (programa or "").strip()
+    if not raw:
+        return None
+    nk = normalize_program_lookup_key(raw)
+    return norm_durations.get(nk)
 
 
 def build_program_norm_price_map(user_id: int) -> dict[str, float]:

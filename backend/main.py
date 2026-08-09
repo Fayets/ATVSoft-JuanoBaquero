@@ -17,6 +17,7 @@ from src.controllers.auth_controller import router as auth_router
 from src.controllers.bio_controller import router as bio_router
 from src.controllers.call_reports_controller import router as call_reports_router
 from src.controllers.calendly_controller import router as calendly_router
+from src.controllers.clients_controller import router as clients_router
 from src.controllers.conexiones_controller import router as conexiones_router
 from src.controllers.ghl_controller import router as ghl_router
 # from src.controllers.health_controller import router as health_router
@@ -226,6 +227,7 @@ app.add_middleware(
 app.include_router(admin_panel_router)
 app.include_router(auth_router)
 app.include_router(agent_router)
+app.include_router(clients_router)
 app.include_router(conexiones_router)
 app.include_router(ghl_router)  # /ghl/* (conexiones UI, webhooks)
 app.include_router(ghl_router, prefix="/api")  # /api/ghl/* (apiFetch del panel diario)

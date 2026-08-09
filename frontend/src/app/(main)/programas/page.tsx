@@ -5,7 +5,7 @@ import { apiFetch, backendAuthHeaders, resolveBackendUserId } from '@/lib/api'
 import { useToast } from '@/shared/components/toast'
 import { useAuthUser } from '@/shared/hooks/use-auth-user'
 
-type ProgramRow = { id: number; name: string; price_usd: number; sort_order: number }
+type ProgramRow = { id: number; name: string; price_usd: number; duration_months?: number | null; sort_order: number }
 
 function formatUsd(n: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -18,10 +18,12 @@ export default function ProgramasPage() {
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
   const [newPrice, setNewPrice] = useState('')
+  const [newDuration, setNewDuration] = useState('')
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editPrice, setEditPrice] = useState('')
+  const [editDuration, setEditDuration] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
 
   const fetchPrograms = useCallback(async () => {
@@ -63,12 +65,18 @@ export default function ProgramasPage() {
   const addProgram = async () => {
     const name = newName.trim()
     const price = Number(String(newPrice).replace(',', '.'))
+    const durRaw = newDuration.trim()
+    const duration_months = durRaw ? Number(durRaw) : undefined
     if (!name) {
       toast('Ingresá el nombre del programa')
       return
     }
     if (!Number.isFinite(price) || price < 0) {
       toast('Precio inválido')
+      return
+    }
+    if (durRaw && (!Number.isFinite(duration_months!) || duration_months! < 1)) {
+      toast('Duración inválida (meses)')
       return
     }
     if (!resolveBackendUserId()) {
@@ -80,7 +88,11 @@ export default function ProgramasPage() {
       const res = await apiFetch('/programs', {
         method: 'POST',
         headers: backendAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name, price_usd: price }),
+        body: JSON.stringify({
+          name,
+          price_usd: price,
+          ...(duration_months ? { duration_months } : {}),
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -93,6 +105,7 @@ export default function ProgramasPage() {
       }
       setNewName('')
       setNewPrice('')
+      setNewDuration('')
       await fetchPrograms()
       notifyProgramsChanged()
       toast('Programa creado')
@@ -105,24 +118,32 @@ export default function ProgramasPage() {
     setEditingId(p.id)
     setEditName(p.name)
     setEditPrice(String(p.price_usd))
+    setEditDuration(p.duration_months ? String(p.duration_months) : '')
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setEditName('')
     setEditPrice('')
+    setEditDuration('')
   }
 
   const saveEdit = async () => {
     if (editingId == null) return
     const name = editName.trim()
     const price = Number(String(editPrice).replace(',', '.'))
+    const durRaw = editDuration.trim()
+    const duration_months = durRaw ? Number(durRaw) : null
     if (!name) {
       toast('El nombre no puede estar vacío')
       return
     }
     if (!Number.isFinite(price) || price < 0) {
       toast('Precio inválido')
+      return
+    }
+    if (durRaw && (!Number.isFinite(duration_months!) || duration_months! < 1)) {
+      toast('Duración inválida (meses)')
       return
     }
     if (!resolveBackendUserId()) {
@@ -134,7 +155,11 @@ export default function ProgramasPage() {
       const res = await apiFetch(`/programs/${editingId}`, {
         method: 'PATCH',
         headers: backendAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name, price_usd: price }),
+        body: JSON.stringify({
+          name,
+          price_usd: price,
+          duration_months: durRaw ? duration_months : null,
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -193,7 +218,7 @@ export default function ProgramasPage() {
         <h2 className="text-lg font-semibold tracking-tight text-[var(--text)]">Programas</h2>
         <p className="mt-1 text-[12px] text-[var(--text3)]">
           Definí cada oferta con su precio en USD. En Leads, la columna «Prog. ofrecido» usa esta lista; el panel de
-          ventas usa estos importes como facturación por cierre.
+          ventas usa estos importes como facturación por cierre. La duración en meses alimenta el CRM de clientes.
         </p>
       </div>
 
@@ -225,6 +250,18 @@ export default function ProgramasPage() {
               className="rounded-lg border border-[var(--border)] bg-[var(--bg3)] px-3 py-2 font-mono-num text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
             />
           </label>
+          <label className="flex w-[100px] flex-col gap-1">
+            <span className="text-[11px] text-[var(--text3)]">Meses</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={newDuration}
+              disabled={adding}
+              onChange={(e) => setNewDuration(e.target.value)}
+              placeholder="6"
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg3)] px-3 py-2 font-mono-num text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            />
+          </label>
           <button
             type="button"
             disabled={adding}
@@ -242,13 +279,14 @@ export default function ProgramasPage() {
             <tr className="border-b border-[var(--border)] bg-[var(--bg3)]">
               <th className="px-4 py-3 font-semibold text-[var(--text2)]">Programa</th>
               <th className="px-4 py-3 font-semibold text-[var(--text2)]">Precio</th>
+              <th className="px-4 py-3 font-semibold text-[var(--text2)]">Meses</th>
               <th className="px-4 py-3 font-semibold text-[var(--text2)] w-[200px]">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {programs.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-10 text-center text-[var(--text3)]">
+                <td colSpan={4} className="px-4 py-10 text-center text-[var(--text3)]">
                   Todavía no cargaste programas. Agregá el primero arriba.
                 </td>
               </tr>
@@ -283,6 +321,20 @@ export default function ProgramasPage() {
                         />
                       ) : (
                         formatUsd(p.price_usd)
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono-num text-[var(--text2)]">
+                      {isEdit ? (
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={editDuration}
+                          disabled={busy}
+                          onChange={(e) => setEditDuration(e.target.value)}
+                          className="w-[72px] rounded border border-[var(--accent)] bg-[var(--bg3)] px-2 py-1 text-[13px] outline-none"
+                        />
+                      ) : (
+                        p.duration_months ? `${p.duration_months}` : '—'
                       )}
                     </td>
                     <td className="px-4 py-3">

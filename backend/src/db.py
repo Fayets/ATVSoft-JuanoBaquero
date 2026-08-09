@@ -1625,6 +1625,240 @@ def _migrate_postgres_lead_payment() -> None:
         conn.close()
 
 
+def _migrate_postgres_offered_program_duration() -> None:
+    """Añade duration_months al catálogo de programas."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND lower(table_name) = 'offered_program'
+                """
+            )
+            tr = cur.fetchone()
+            if not tr:
+                return
+            physical = tr[0]
+            sql_table = f'"{physical}"' if physical != physical.lower() else physical
+            try:
+                cur.execute(
+                    f"ALTER TABLE {sql_table} ADD COLUMN IF NOT EXISTS duration_months INTEGER NULL"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+def _migrate_postgres_crm_client() -> None:
+    """Crea o migra `crm_client` vinculado a `lead`."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'crm_client'
+                """
+            )
+            cols = {r[0] for r in cur.fetchall()}
+            if cols and "lead_id" not in cols:
+                cur.execute("DROP TABLE IF EXISTS crm_client")
+                cols = set()
+            if not cols:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS crm_client (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        lead_id INTEGER NOT NULL,
+                        program_duration_months INTEGER NULL,
+                        start_date DATE NULL,
+                        sale_status TEXT NULL,
+                        wins JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        notes TEXT NOT NULL DEFAULT '',
+                        created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                        updated_at TIMESTAMP NULL,
+                        CONSTRAINT uq_crm_client_user_lead UNIQUE (user_id, lead_id)
+                    )
+                    """
+                )
+            try:
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_crm_client_user_id ON crm_client (user_id)"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_crm_client_lead_id ON crm_client (lead_id)"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+def _seed_offered_program_durations() -> None:
+    """Premium / VIP → 6 meses en catálogo si aún no tienen duración."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND lower(table_name) = 'offered_program'
+                """
+            )
+            tr = cur.fetchone()
+            if not tr:
+                return
+            physical = tr[0]
+            sql_table = f'"{physical}"' if physical != physical.lower() else physical
+            cur.execute(
+                f"""
+                UPDATE {sql_table}
+                SET duration_months = 6
+                WHERE duration_months IS NULL
+                  AND (
+                    lower(name) LIKE '%premium%'
+                    OR lower(name) LIKE '%vip%'
+                  )
+                """
+            )
+    finally:
+        conn.close()
+
+
+def _migrate_postgres_legacy_juano() -> None:
+    """Trazabilidad migración CRM juano: source, legacy_id, columnas de negocio, legacy_cuota_ref."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            lead_alters = [
+                "ALTER TABLE lead ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'atv'",
+                "ALTER TABLE lead ADD COLUMN IF NOT EXISTS legacy_id TEXT NULL",
+                "ALTER TABLE lead ADD COLUMN IF NOT EXISTS closer_norm TEXT DEFAULT ''",
+                "ALTER TABLE lead ADD COLUMN IF NOT EXISTS legacy_meta JSONB DEFAULT '{}'::jsonb",
+            ]
+            for sql in lead_alters:
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    pass
+            pay_alters = [
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'atv'",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS legacy_id TEXT NULL",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS concepto TEXT DEFAULT ''",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS producto TEXT DEFAULT ''",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS metodo TEXT DEFAULT ''",
+                "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS legacy_meta JSONB DEFAULT '{}'::jsonb",
+            ]
+            for sql in pay_alters:
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    pass
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS legacy_cuota_ref (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    source TEXT DEFAULT 'atv',
+                    legacy_id TEXT NULL,
+                    lead_id INTEGER NULL,
+                    alumno_raw TEXT DEFAULT '',
+                    programa_raw TEXT DEFAULT '',
+                    monto_total DOUBLE PRECISION NULL,
+                    abonado DOUBLE PRECISION NULL,
+                    saldo DOUBLE PRECISION NULL,
+                    ultimo_cobro DATE NULL,
+                    siguiente_cobro DATE NULL,
+                    closer_raw TEXT DEFAULT '',
+                    closer_norm TEXT DEFAULT '',
+                    situacion_raw TEXT DEFAULT '',
+                    cuota_label TEXT DEFAULT '',
+                    match_score DOUBLE PRECISION NULL,
+                    match_method TEXT DEFAULT '',
+                    legacy_meta JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+                )
+                """
+            )
+            indexes = [
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_legacy_id ON lead (legacy_id) WHERE legacy_id IS NOT NULL",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_payment_legacy_id ON lead_payment (legacy_id) WHERE legacy_id IS NOT NULL",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_cuota_ref_legacy_id ON legacy_cuota_ref (legacy_id) WHERE legacy_id IS NOT NULL",
+                "CREATE INDEX IF NOT EXISTS idx_lead_payment_user_source ON lead_payment (user_id, source)",
+                "CREATE INDEX IF NOT EXISTS idx_lead_user_source ON lead (user_id, source)",
+            ]
+            for sql in indexes:
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
@@ -1658,6 +1892,10 @@ def init_db() -> None:
     _migrate_postgres_lead_triajer()
     _migrate_postgres_lead_payment()
     _migrate_postgres_comprobante_url()
+    _migrate_postgres_offered_program_duration()
+    _seed_offered_program_durations()
+    _migrate_postgres_crm_client()
+    _migrate_postgres_legacy_juano()
     db.generate_mapping(create_tables=True)
     _migrate_agendo_en_iso_to_call()
     _migrate_agendo_en_default_chat_when_agendado()

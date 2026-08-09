@@ -135,6 +135,7 @@ class OfferedProgram(db.Entity):
     user_id = Required(int, index=True)
     name = Required(str)
     price_usd = Required(float, default=0)
+    duration_months = Optional(int)
     sort_order = Required(int, default=0)
     created_at = Required(datetime, default=lambda: datetime.utcnow())
 
@@ -156,6 +157,8 @@ class AvatarType(db.Entity):
 class Lead(db.Entity):
     id = PrimaryKey(int, auto=True)
     user_id = Required(int, index=True)
+    source = Optional(str, default="atv")
+    legacy_id = Optional(str)
     # Identificación (Optional(str) con default="" para evitar None al instanciar en Pony)
     nombre = Optional(str, default="")
     ig = Optional(str, default="")
@@ -183,6 +186,7 @@ class Lead(db.Entity):
     # Negocio (setter/closer/triajer = nombre en `teammember`, texto libre para compatibilidad)
     setter = Optional(str, default="")
     closer = Optional(str, default="")
+    closer_norm = Optional(str, default="")
     triajer = Optional(str, default="")
     triaje_hecho = Optional(bool, default=False)
     dolores_setting = Optional(str, default="")
@@ -199,6 +203,7 @@ class Lead(db.Entity):
     estado = Optional(str, default="")
     calificacion_llamada = Optional(str, default="")
     notas = Optional(str, default="")
+    legacy_meta = Optional(Json, default=lambda: {})
     recordatorio_enviado = Optional(bool, default=False)
     created_at = Required(datetime, default=lambda: datetime.utcnow())
 
@@ -373,8 +378,60 @@ class LeadPayment(db.Entity):
     id = PrimaryKey(int, auto=True)
     user_id = Required(int, index=True)
     lead_id = Required(int, index=True)
+    source = Optional(str, default="atv")
+    legacy_id = Optional(str)
     monto = Required(float, default=0)
     fecha = Required(date)
+    concepto = Optional(str, default="")
+    producto = Optional(str, default="")
+    metodo = Optional(str, default="")
     nota = Optional(str, default="")
     comprobante_url = Optional(str, default="")
+    legacy_meta = Optional(Json, default=lambda: {})
     created_at = Required(datetime, default=lambda: datetime.utcnow())
+
+
+class LegacyCuotaRef(db.Entity):
+    """Snapshot histórico de cuotas del CRM juano (no fuente de saldos en ATV)."""
+
+    _table_ = "legacy_cuota_ref"
+
+    id = PrimaryKey(int, auto=True)
+    user_id = Required(int, index=True)
+    source = Optional(str, default="atv")
+    legacy_id = Optional(str)
+    lead_id = Optional(int)
+    alumno_raw = Optional(str, default="")
+    programa_raw = Optional(str, default="")
+    monto_total = Optional(float)
+    abonado = Optional(float)
+    saldo = Optional(float)
+    ultimo_cobro = Optional(date)
+    siguiente_cobro = Optional(date)
+    closer_raw = Optional(str, default="")
+    closer_norm = Optional(str, default="")
+    situacion_raw = Optional(str, default="")
+    cuota_label = Optional(str, default="")
+    match_score = Optional(float)
+    match_method = Optional(str, default="")
+    legacy_meta = Optional(Json, default=lambda: {})
+    created_at = Required(datetime, default=lambda: datetime.utcnow())
+
+
+class CrmClient(db.Entity):
+    """Datos CRM post-venta vinculados a un lead (programa, avance, wins)."""
+
+    _table_ = "crm_client"
+
+    id = PrimaryKey(int, auto=True)
+    user_id = Required(int, index=True)
+    lead_id = Required(int)
+    program_duration_months = Optional(int)
+    start_date = Optional(date)
+    sale_status = Optional(str)  # override; si null se infiere del lead
+    wins = Required(Json, default=lambda: [])
+    notes = Optional(str, default="")
+    created_at = Required(datetime, default=lambda: datetime.utcnow())
+    updated_at = Optional(datetime)
+
+    composite_key(user_id, lead_id)

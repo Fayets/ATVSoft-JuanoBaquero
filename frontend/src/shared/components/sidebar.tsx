@@ -26,6 +26,12 @@ const navigation: NavGroup[] = [
     items: [],
   },
   {
+    title: 'Dashboard clientes',
+    icon: '◆',
+    href: '/dashboard-clientes',
+    items: [],
+  },
+  {
     title: 'Dashboard ventas',
     icon: '◆',
     href: '/sales-dashboard',
@@ -67,6 +73,12 @@ const dataGroups: NavGroup[] = [
       { label: 'Historial de reportes', href: '/team/historial-reportes' },
       { label: 'Equipo', href: '/team/equipo' },
     ],
+  },
+  {
+    title: 'Trackeo de clientes',
+    icon: '👤',
+    href: '/trackeo-clientes',
+    items: [],
   },
 ]
 

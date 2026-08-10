@@ -1,0 +1,108 @@
+{
+  "user_id": 1,
+  "dry_run": false,
+  "completed_at": "2026-08-09T22:23:43.517589",
+  "excluded": {
+    "leads": {
+      "count": 11,
+      "reason": "es_prueba",
+      "items": [
+        {
+          "legacy_id": "b6b792dd-5e70-42c1-b5cc-9c874681a8ea",
+          "nombre": "PRUEBA 5",
+          "email": "ws@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "e4118bb9-eda3-4eb0-a54a-f26653120b33",
+          "nombre": "x",
+          "email": "x@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "03f3f8e8-476f-4d94-810c-26fe93dad1ad",
+          "nombre": "Nicholas MEDICOS Y SEGURIDAD INDUSTRIAL LATAM SAS",
+          "email": "nicholas@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "784d3fbd-d594-4c04-9df4-2198e3bdb9ca",
+          "nombre": "PRUEBA MEDICOS Y SEGURIDAD INDUSTRIAL LATAM SAS",
+          "email": "prueba12@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "7dc8e1fa-aad9-4e8f-87f6-010ae2a6a66c",
+          "nombre": "DFS",
+          "email": "awm@oytk.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "99f81485-fed9-4b6d-bf68-f8563e64a568",
+          "nombre": "Juan",
+          "email": "djjej@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "19085a3f-ab8d-464b-a10d-4308f92e18dc",
+          "nombre": "Oko",
+          "email": "oko@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "c173b663-e623-492b-9e0c-50b91ce81ead",
+          "nombre": "Uuaq",
+          "email": "uuq@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "0464ef32-d171-4fa1-a96b-00a2851d5ac1",
+          "nombre": "yuyu",
+          "email": "yuyu@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "03f54d3e-e631-4e6f-852e-70c8bdf6335b",
+          "nombre": "Veran",
+          "email": "veran@gmail.com",
+          "reason": "es_prueba"
+        },
+        {
+          "legacy_id": "357180c3-aa67-4bb7-8189-ffa268314c75",
+          "nombre": "dsfd",
+          "email": "alfggh9._@hotmail.com",
+          "reason": "es_prueba"
+        }
+      ]
+    },
+    "cuotas": {
+      "count": 1,
+      "reason": "es_prueba",
+      "items": [
+        {
+          "legacy_id": "26531a4b-539d-4809-bf86-7a35605e6831",
+          "alumno": "fgghhhh",
+          "reason": "es_prueba"
+        }
+      ]
+    }
+  },
+  "applied": {
+    "leads": {
+      "total": 0,
+      "new": 0,
+      "merged": 0,
+      "absorbed": 0,
+      "collision_groups": 0
+    },
+    "pagos": {
+      "inserted": 0,
+      "usd_total": 0.0,
+      "usd_julio": 0.0
+    },
+    "cuotas": {
+      "inserted": 0
+    }
+  },
+  "collisions": []
+}

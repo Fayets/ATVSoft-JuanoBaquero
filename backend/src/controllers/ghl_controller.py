@@ -556,6 +556,8 @@ def _apply_appointment_to_lead(
             row.call = call_at
         if appt_id:
             row.ghl_appointment_id = appt_id
+        if ghl_contact_id:
+            row.ghl_contact_id = ghl_contact_id
         if email:
             row.email = email
         if phone:
@@ -599,6 +601,7 @@ def _apply_appointment_to_lead(
         ig=ig or "",
         origen="GHL",
         ghl_appointment_id=appt_id or None,
+        ghl_contact_id=ghl_contact_id or None,
         closer=closer_name,
         triajer=pick_next_triajer(user_id),
         triaje_hecho=False,

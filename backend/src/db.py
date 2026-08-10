@@ -1493,6 +1493,67 @@ def _migrate_postgres_lead_ghl_appointment_id() -> None:
         conn.close()
 
 
+def _migrate_postgres_lead_ghl_contact_id() -> None:
+    """Columna ghl_contact_id en lead + índice NO único + backfill desde notas."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND lower(table_name) = 'lead'
+                """
+            )
+            tr = cur.fetchone()
+            if not tr:
+                return
+            physical = tr[0]
+            sql_table = f'"{physical}"' if physical != physical.lower() else physical
+            try:
+                cur.execute(
+                    f"ALTER TABLE {sql_table} ADD COLUMN IF NOT EXISTS "
+                    f"ghl_contact_id VARCHAR"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS lead_user_ghl_contact_id_idx "
+                    f"ON {sql_table} (user_id, ghl_contact_id) "
+                    f"WHERE ghl_contact_id IS NOT NULL AND TRIM(ghl_contact_id) <> ''"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    f"""
+                    UPDATE {sql_table}
+                    SET ghl_contact_id = (regexp_match(notas, 'GHL contact_id:\\s*(\\S+)', 'i'))[1]
+                    WHERE (ghl_contact_id IS NULL OR TRIM(ghl_contact_id) = '')
+                      AND notas ILIKE '%GHL contact_id:%'
+                    """
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def _migrate_postgres_lead_triajer() -> None:
     """Columnas triajer + triaje_hecho en lead (asignación y checklist del panel diario)."""
     if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
@@ -1804,6 +1865,10 @@ def _migrate_postgres_legacy_juano() -> None:
                     cur.execute(sql)
                 except Exception:
                     pass
+            try:
+                cur.execute("DROP INDEX IF EXISTS idx_lead_legacy_id")
+            except Exception:
+                pass
             pay_alters = [
                 "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'atv'",
                 "ALTER TABLE lead_payment ADD COLUMN IF NOT EXISTS legacy_id TEXT NULL",
@@ -1817,6 +1882,20 @@ def _migrate_postgres_legacy_juano() -> None:
                     cur.execute(sql)
                 except Exception:
                     pass
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS legacy_lead_ref (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    legacy_id TEXT NOT NULL,
+                    lead_id INTEGER NULL,
+                    rol TEXT NOT NULL,
+                    motivo TEXT DEFAULT '',
+                    payload JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
+                )
+                """
+            )
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS legacy_cuota_ref (
@@ -1844,8 +1923,9 @@ def _migrate_postgres_legacy_juano() -> None:
                 """
             )
             indexes = [
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_legacy_id ON lead (legacy_id) WHERE legacy_id IS NOT NULL",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_legacy_id ON lead (legacy_id) WHERE legacy_id IS NOT NULL AND legacy_id <> ''",
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_payment_legacy_id ON lead_payment (legacy_id) WHERE legacy_id IS NOT NULL",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_lead_ref_legacy_id ON legacy_lead_ref (legacy_id)",
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_cuota_ref_legacy_id ON legacy_cuota_ref (legacy_id) WHERE legacy_id IS NOT NULL",
                 "CREATE INDEX IF NOT EXISTS idx_lead_payment_user_source ON lead_payment (user_id, source)",
                 "CREATE INDEX IF NOT EXISTS idx_lead_user_source ON lead (user_id, source)",
@@ -1889,6 +1969,7 @@ def init_db() -> None:
     _migrate_postgres_lead_formulario_drop_embudo_fields()
     _migrate_postgres_drop_lead_ingresos()
     _migrate_postgres_lead_ghl_appointment_id()
+    _migrate_postgres_lead_ghl_contact_id()
     _migrate_postgres_lead_triajer()
     _migrate_postgres_lead_payment()
     _migrate_postgres_comprobante_url()

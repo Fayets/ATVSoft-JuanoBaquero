@@ -39,12 +39,80 @@ export type WeekMetrics = {
 }
 
 export type CashCollectedComposition = {
-  /** Suma columna Pagó en leads del mes. */
+  /** PIF / 1ra Cuota / Otro (LeadPayment) + Lead.pago sin historial. */
   pago: number
-  /** Formularios de seguimiento del mes. */
+  /** Fee (LeadPayment) + formularios SeguimientoReport nativos. */
   seguimiento: number
-  /** Historial de pagos / cuotas (Cobranzas → Agregar pago) del mes. */
+  /** 2da / 3ra Cuota (LeadPayment). */
   cuotas: number
+}
+
+export type MonthPaymentEntry = {
+  fecha: string
+  monto: number
+  lead_id?: string
+  concepto?: string
+}
+
+const PAGO_CONCEPTOS = new Set(['PIF', '1ra Cuota', 'Otro'])
+const CUOTAS_CONCEPTOS = new Set(['2da Cuota', '3ra Cuota'])
+
+function cashBucketForConcepto(concepto: string): 'pago' | 'cuotas' | 'seguimiento' {
+  const c = concepto.trim()
+  if (c === 'Fee') return 'seguimiento'
+  if (CUOTAS_CONCEPTOS.has(c)) return 'cuotas'
+  if (PAGO_CONCEPTOS.has(c)) return 'pago'
+  return 'pago'
+}
+
+/** Fuente única: LeadPayment del mes + Lead.pago solo si el lead no tiene historial LeadPayment. */
+export function computeCashCollectedComposition(
+  leads: LeadRow[],
+  paymentEntries: MonthPaymentEntry[],
+  leadIdsWithPaymentHistory: ReadonlySet<string>,
+  seguimientoReportTotal: number,
+): CashCollectedComposition {
+  let pago = 0
+  let cuotas = 0
+  let seguimientoLp = 0
+
+  for (const e of paymentEntries) {
+    const monto = Number(e.monto) || 0
+    if (monto <= 0) continue
+    const bucket = cashBucketForConcepto(String(e.concepto ?? ''))
+    if (bucket === 'pago') pago += monto
+    else if (bucket === 'cuotas') cuotas += monto
+    else seguimientoLp += monto
+  }
+
+  for (const l of leads) {
+    const lid = String(l.id ?? '')
+    if (!lid || leadIdsWithPaymentHistory.has(lid)) continue
+    const m = Number(l.payment) || 0
+    if (m > 0) pago += m
+  }
+
+  return {
+    pago,
+    cuotas,
+    seguimiento: seguimientoReportTotal + seguimientoLp,
+  }
+}
+
+function addCashToWeekBuckets(
+  monto: number,
+  iso: string,
+  byWeek: WeekMetrics,
+  byWeekDay: { [K in keyof WeekMetrics]: number[][] },
+) {
+  if (monto <= 0) return
+  const date = new Date(`${iso.slice(0, 10)}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return
+  const dayOfMonth = date.getDate()
+  const w = Math.min(3, Math.floor((dayOfMonth - 1) / 7))
+  const dow = (date.getDay() + 6) % 7
+  byWeek.ingresos[w] += monto
+  byWeekDay.ingresos[w][dow] += monto
 }
 
 export type LeadsAnalytics = LeadsFunnel & {
@@ -251,8 +319,8 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   const range = monthRangeIso(month)
   let seguimientoEntries: { fecha: string; monto: number }[] = []
   let seguimientoTotal = 0
-  let cuotasEntries: { fecha: string; monto: number }[] = []
-  let cuotasTotal = 0
+  let paymentEntries: MonthPaymentEntry[] = []
+  let leadIdsWithPaymentHistory = new Set<string>()
   let chatsReels = 0
   let chatsStories = 0
   try {
@@ -321,14 +389,21 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       const cj = (await cuotasRes.json().catch(() => ({}))) as {
         total?: unknown
         entries?: unknown
+        lead_ids_with_history?: unknown
       }
-      cuotasTotal = Number(cj.total) || 0
+      if (Array.isArray(cj.lead_ids_with_history)) {
+        leadIdsWithPaymentHistory = new Set(
+          cj.lead_ids_with_history.map((x) => String(x ?? '').trim()).filter(Boolean),
+        )
+      }
       if (Array.isArray(cj.entries)) {
-        cuotasEntries = cj.entries
+        paymentEntries = cj.entries
           .map((x) => x as Record<string, unknown>)
           .map((x) => ({
             fecha: String(x.fecha ?? '').slice(0, 10),
             monto: Number(x.monto) || 0,
+            lead_id: String(x.lead_id ?? ''),
+            concepto: String(x.concepto ?? ''),
           }))
           .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.fecha))
       }
@@ -411,9 +486,16 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   const cierresAds = sumField(closerReports, 'cierres_ads')
   /** Ingreso declarado en reportes closer (solo fallback facturación si no hay programa en leads). */
   const ingresosReports = sumField(closerReports, 'ingreso')
-  const cashFromLeadsPayments = leads.reduce((s, l) => s + (Number(l.payment) || 0), 0)
-  /** Cash collected = Pagó (leads) + seguimiento + cuotas (historial cobranzas). */
-  const cashCollected = cashFromLeadsPayments + seguimientoTotal + cuotasTotal
+  const cashCollectedComposition = computeCashCollectedComposition(
+    leads,
+    paymentEntries,
+    leadIdsWithPaymentHistory,
+    seguimientoTotal,
+  )
+  const cashCollected =
+    cashCollectedComposition.pago +
+    cashCollectedComposition.cuotas +
+    cashCollectedComposition.seguimiento
   const noShows = Math.max(0, agendas - shows)
 
   const catalogDefined = Object.keys(programPrices).length > 0
@@ -548,29 +630,21 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   })
 
   seguimientoEntries.forEach((e) => {
-    const monto = Number(e.monto) || 0
-    if (monto <= 0) return
-    const iso = e.fecha.slice(0, 10)
-    const date = new Date(`${iso}T12:00:00`)
-    if (Number.isNaN(date.getTime())) return
-    const dayOfMonth = date.getDate()
-    const w = Math.min(3, Math.floor((dayOfMonth - 1) / 7))
-    const dow = (date.getDay() + 6) % 7
-    byWeek.ingresos[w] += monto
-    byWeekDay.ingresos[w][dow] += monto
+    addCashToWeekBuckets(Number(e.monto) || 0, e.fecha, byWeek, byWeekDay)
   })
 
-  cuotasEntries.forEach((e) => {
-    const monto = Number(e.monto) || 0
-    if (monto <= 0) return
-    const iso = e.fecha.slice(0, 10)
-    const date = new Date(`${iso}T12:00:00`)
-    if (Number.isNaN(date.getTime())) return
-    const dayOfMonth = date.getDate()
-    const w = Math.min(3, Math.floor((dayOfMonth - 1) / 7))
-    const dow = (date.getDay() + 6) % 7
-    byWeek.ingresos[w] += monto
-    byWeekDay.ingresos[w][dow] += monto
+  paymentEntries.forEach((e) => {
+    addCashToWeekBuckets(Number(e.monto) || 0, e.fecha, byWeek, byWeekDay)
+  })
+
+  leads.forEach((l) => {
+    const lid = String(l.id ?? '')
+    if (!lid || leadIdsWithPaymentHistory.has(lid)) return
+    const m = Number(l.payment) || 0
+    if (m <= 0) return
+    const iso = leadMetricDateIso(l)
+    if (!iso) return
+    addCashToWeekBuckets(m, iso, byWeek, byWeekDay)
   })
 
   // Facturación por día/semana: mismo `leadFacturacionUsd` que el embudo mensual (fecha vía `leadMetricDateIso`)
@@ -615,11 +689,7 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       programas,
       byWeek,
       byWeekDay,
-      cashCollectedComposition: {
-        pago: cashFromLeadsPayments,
-        seguimiento: seguimientoTotal,
-        cuotas: cuotasTotal,
-      },
+      cashCollectedComposition,
     },
   }
 }

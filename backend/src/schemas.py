@@ -1046,6 +1046,7 @@ class CobranzaPagoMonthEntryOut(BaseModel):
     fecha: str
     monto: float = 0
     lead_id: str = ""
+    concepto: str = ""
     nota: str = ""
 
 
@@ -1055,6 +1056,10 @@ class CobranzasMonthPagosOut(BaseModel):
     month: str
     total: float = 0
     entries: list[CobranzaPagoMonthEntryOut] = Field(default_factory=list)
+    lead_ids_with_history: list[str] = Field(
+        default_factory=list,
+        description="Lead ids con al menos un LeadPayment (cualquier fecha); evita doble conteo con Lead.pago.",
+    )
 
 
 class CobranzaPerfilOut(BaseModel):

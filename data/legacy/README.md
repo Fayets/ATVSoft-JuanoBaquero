@@ -1,21 +1,28 @@
 # CSV de migración CRM juano
 
-## 1. Exportar desde Supabase
+## 1. Exportar desde Supabase (misma sesión)
 
-Seguí las queries en **`docs/EXPORT_CSV_SUPABASE_JUANO.md`**.
+Seguí **`docs/EXPORT_CSV_SUPABASE_JUANO.md`**.
+
+1. **§0** — Query de control → guardar como `expected_counts.json`
+2. Exportar `pagos.csv`, `leads.csv`, `cuotas.csv` (sin pausa larga entre pasos)
 
 Proyecto: `crm-juanovent` · Schema: `juano`  
-⚠️ En SQL Editor: **`Limit 100 rows` → `No limit`** antes de cada export.
+⚠️ SQL Editor: **`Limit 100 rows` → `No limit`**
 
-## 2. Guardar aquí
+## 2. Archivos en esta carpeta
 
 ```
-data/legacy/pagos.csv   (351 filas + header = 352 líneas)
-data/legacy/leads.csv   (2478 filas + header = 2479 líneas)
-data/legacy/cuotas.csv  (20 filas + header = 21 líneas)
+expected_counts.json   ← query §0 (obligatorio)
+import_summary.json    ← generado por import/dry-run (para validate)
+pagos.csv
+leads.csv
+cuotas.csv
 ```
 
-## 3. Verificar
+Conteos = valores en `expected_counts.json` + 1 línea de header por CSV.
+
+## 3. Verificar líneas (PowerShell)
 
 ```powershell
 Get-Content data\legacy\pagos.csv  | Measure-Object -Line
@@ -25,9 +32,15 @@ Get-Content data\legacy\cuotas.csv | Measure-Object -Line
 
 Si alguno da **101** → export truncado, repetir con `No limit`.
 
-## 4. Dry-run
+## 4. Reporte duplicados (antes del dry-run)
 
 ```bash
 cd backend
+python ../scripts/import_legacy_juano.py --user-id 1 --report-duplicates
+```
+
+## 5. Dry-run
+
+```bash
 python ../scripts/import_legacy_juano.py --user-id 1 --dry-run
 ```

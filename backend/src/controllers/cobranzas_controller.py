@@ -222,6 +222,11 @@ def list_pagos_month(
         }
         entries: list[CobranzaPagoMonthEntryOut] = []
         total = 0.0
+        lead_ids_with_history: set[int] = {
+            int(p.lead_id)
+            for p in list(LeadPayment.select())
+            if int(p.user_id) == uid
+        }
         for p in list(LeadPayment.select()):
             if int(p.user_id) != uid:
                 continue
@@ -240,12 +245,18 @@ def list_pagos_month(
                     fecha=_date_iso(p.fecha),
                     monto=monto,
                     lead_id=str(p.lead_id),
+                    concepto=(p.concepto or "").strip(),
                     nota=p.nota or "",
                 )
             )
         entries.sort(key=lambda e: e.fecha, reverse=True)
 
-    return CobranzasMonthPagosOut(month=month_str, total=total, entries=entries)
+    return CobranzasMonthPagosOut(
+        month=month_str,
+        total=total,
+        entries=entries,
+        lead_ids_with_history=sorted(str(i) for i in lead_ids_with_history),
+    )
 
 
 @router.get("/{lead_id}", response_model=CobranzaPerfilOut)

@@ -150,13 +150,13 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
         result: formatCash(d.ingresos),
         formula: 'Cash collected = Pagó en leads + seguimiento + cuotas del mes.',
         data: [
-          { label: 'Pago (columna Pagó en leads)', value: formatCash(d.cashCollectedComposition.pago) },
-          { label: 'Seguimiento (formularios)', value: formatCash(d.cashCollectedComposition.seguimiento) },
-          { label: 'Cuotas (Cobranzas → Agregar pago)', value: formatCash(d.cashCollectedComposition.cuotas) },
+          { label: 'Pago (PIF / 1ra cuota / lead sin historial)', value: formatCash(d.cashCollectedComposition.pago) },
+          { label: 'Seguimiento (Fee + formularios)', value: formatCash(d.cashCollectedComposition.seguimiento) },
+          { label: 'Cuotas (2da / 3ra cuota)', value: formatCash(d.cashCollectedComposition.cuotas) },
           { label: 'Total cash del mes', value: formatCash(d.ingresos) },
         ],
         source:
-          'Fuente: leads (/leads) + seguimiento (/team/seguimiento-reports/month) + cuotas (/cobranzas/pagos/month).',
+          'Fuente: LeadPayment del mes (por concepto) + Lead.pago solo si no hay historial + seguimiento nativo.',
       }
     case 'conversaciones':
       return {

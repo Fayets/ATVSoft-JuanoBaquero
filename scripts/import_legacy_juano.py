@@ -4,8 +4,10 @@
 Ejecutar desde backend:
   python ../scripts/import_legacy_juano.py --list-users
   python ../scripts/import_legacy_juano.py --user-id 1 --dry-run
+  python ../scripts/import_legacy_juano.py --user-id 1 --report-duplicates
 
 Requiere CSV en ./data/legacy/: pagos.csv, leads.csv, cuotas.csv
+Opcional: expected_counts.json (generado al exportar desde Supabase)
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ sys.path.insert(0, str(BACKEND))
 
 from src.services.legacy_juano_import import (  # noqa: E402
     LegacyJuanoImporter,
+    format_duplicate_report,
     format_summary,
     list_auth_users,
     resolve_target_user,
@@ -30,6 +33,11 @@ def main() -> int:
     parser.add_argument("--user-id", type=int, help="Tenant destino (auth user id)")
     parser.add_argument("--list-users", action="store_true", help="Listar usuarios ATV y salir")
     parser.add_argument("--dry-run", action="store_true", help="Simular sin escribir en BD")
+    parser.add_argument(
+        "--report-duplicates",
+        action="store_true",
+        help="Reporte de matcheo leads.csv vs ATV (solo lectura, no escribe)",
+    )
     parser.add_argument(
         "--only",
         choices=("leads", "pagos", "cuotas"),
@@ -66,6 +74,21 @@ def main() -> int:
         return 1
 
     print(f"Tenant destino: user_id={uid} username={username!r}")
+
+    importer = LegacyJuanoImporter(uid, args.data_dir, dry_run=args.dry_run)
+
+    if args.report_duplicates:
+        try:
+            report = importer.run_report_duplicates()
+        except (FileNotFoundError, ValueError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        print(format_duplicate_report(report, user_id=uid, username=username))
+        return 0
+
     if not args.dry_run:
         print("⚠️  IMPORT REAL — se escribirá en la base de datos.")
         if not args.yes:
@@ -77,19 +100,21 @@ def main() -> int:
                 print("Cancelado.")
                 return 1
 
-    importer = LegacyJuanoImporter(uid, args.data_dir, dry_run=args.dry_run)
     try:
-        importer.verify_csvs()
+        stats = importer.run(only=args.only)
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    try:
-        stats = importer.run(only=args.only)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
-    print(format_summary(stats, args.dry_run, user_id=uid, username=username))
+    print(format_summary(stats, args.dry_run, user_id=uid, username=username, data_dir=args.data_dir))
+    try:
+        summary_path = importer.save_import_summary()
+        print(f"\nResumen guardado: {summary_path}")
+    except OSError as e:
+        print(f"AVISO: no se pudo guardar import_summary.json: {e}", file=sys.stderr)
     return 0
 
 

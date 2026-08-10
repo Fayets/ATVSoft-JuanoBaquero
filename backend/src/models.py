@@ -180,6 +180,8 @@ class Lead(db.Entity):
     call = Optional(datetime)
     # Id del evento GHL (/calendars/events → event.id). Upsert idempotente del sync.
     ghl_appointment_id = Optional(str)
+    # Contacto GHL (puede repetirse: varias citas por persona). Índice NO único.
+    ghl_contact_id = Optional(str)
     # Formulario GHL calendar (7 preguntas de calificación; contacto va en nombre/ig/email/telefono)
     formulario = Optional(Json, default=lambda: {})
     link_llamada = Optional(str, default="")
@@ -388,6 +390,21 @@ class LeadPayment(db.Entity):
     nota = Optional(str, default="")
     comprobante_url = Optional(str, default="")
     legacy_meta = Optional(Json, default=lambda: {})
+    created_at = Required(datetime, default=lambda: datetime.utcnow())
+
+
+class LegacyLeadRef(db.Entity):
+    """Trazabilidad por fila de leads.csv (ganador, absorbida o nueva)."""
+
+    _table_ = "legacy_lead_ref"
+
+    id = PrimaryKey(int, auto=True)
+    user_id = Required(int, index=True)
+    legacy_id = Required(str, unique=True)
+    lead_id = Optional(int, index=True)
+    rol = Required(str)
+    motivo = Optional(str, default="")
+    payload = Optional(Json, default=lambda: {})
     created_at = Required(datetime, default=lambda: datetime.utcnow())
 
 

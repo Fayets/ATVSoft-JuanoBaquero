@@ -1,0 +1,26 @@
+{
+  "user_id": 1,
+  "dry_run": false,
+  "completed_at": "2026-08-09T21:00:00",
+  "excluded": {
+    "leads": {
+      "count": 10,
+      "reason": "es_prueba",
+      "items": [
+        {"legacy_id": "uuid-ejemplo", "nombre": "PRUEBA 5", "email": "x@gmail.com", "reason": "es_prueba"}
+      ]
+    },
+    "cuotas": {
+      "count": 1,
+      "reason": "es_prueba",
+      "items": [
+        {"legacy_id": "uuid-ejemplo", "alumno": "fgghhhh", "reason": "es_prueba"}
+      ]
+    }
+  },
+  "applied": {
+    "leads": {"total": 2486, "new": 1421, "merged": 1065},
+    "pagos": {"inserted": 351},
+    "cuotas": {"inserted": 19}
+  }
+}

@@ -1,10 +1,15 @@
 {
-  "pagos_total": 357,
-  "pagos_usd_total": 257309.99,
+  "pagos_total": 362,
+  "pagos_usd_total": 265526.99,
   "pagos_julio": 211,
   "pagos_usd_julio": 163195.80,
-  "leads_total": 2499,
-  "leads_presento_si": 369,
+  "leads_total": 2521,
+  "leads_presento_si": 371,
   "cuotas_total": 22,
-  "exportado_en": "2026-08-09T21:10:51Z"
+  "exportado_en": "2026-08-10T16:00:00Z",
+  "incremental_desde": "2026-08-09T21:10:00Z",
+  "baseline_pagos": 357,
+  "baseline_usd": 257309.99,
+  "baseline_lead_refs": 2488,
+  "baseline_cuotas": 21
 }

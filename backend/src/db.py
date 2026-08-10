@@ -1892,10 +1892,19 @@ def _migrate_postgres_legacy_juano() -> None:
                     rol TEXT NOT NULL,
                     motivo TEXT DEFAULT '',
                     payload JSONB DEFAULT '{}'::jsonb,
+                    payload_history JSONB DEFAULT '[]'::jsonb,
                     created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc')
                 )
                 """
             )
+            ref_alters = [
+                "ALTER TABLE legacy_lead_ref ADD COLUMN IF NOT EXISTS payload_history JSONB DEFAULT '[]'::jsonb",
+            ]
+            for sql in ref_alters:
+                try:
+                    cur.execute(sql)
+                except Exception:
+                    pass
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS legacy_cuota_ref (

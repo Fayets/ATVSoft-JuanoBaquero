@@ -295,9 +295,14 @@ export default function TeamEquipoEditPage() {
         </div>
       )}
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={`Agregar ${addRole === 'setter' ? 'Setter' : 'Closer'}`} maxWidth="400px">
+      <Modal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        title={`Agregar ${addRole === 'setter' ? 'Setter' : addRole === 'triajer' ? 'Triajer' : 'Closer'}`}
+        maxWidth="400px"
+      >
         <AddMemberForm
-          role={addRole === 'setter' ? 'Setter' : 'Closer'}
+          role={addRole === 'setter' ? 'Setter' : addRole === 'triajer' ? 'Triajer' : 'Closer'}
           onAdd={handleAdd}
           onCancel={() => setShowAdd(false)}
         />
@@ -321,7 +326,9 @@ export default function TeamEquipoEditPage() {
                 ? 'setter'
                 : confirmDeleteMember.rol === 'cash'
                   ? 'cash'
-                  : 'closer'})?
+                  : confirmDeleteMember.rol === 'triajer'
+                    ? 'triajer'
+                    : 'closer'})?
             </p>
             <div className="flex justify-end gap-2">
               <button

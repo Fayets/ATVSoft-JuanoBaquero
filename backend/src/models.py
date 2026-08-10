@@ -405,6 +405,7 @@ class LegacyLeadRef(db.Entity):
     rol = Required(str)
     motivo = Optional(str, default="")
     payload = Optional(Json, default=lambda: {})
+    payload_history = Optional(Json, default=lambda: [])
     created_at = Required(datetime, default=lambda: datetime.utcnow())
 
 

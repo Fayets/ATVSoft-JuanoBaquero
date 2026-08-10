@@ -87,6 +87,8 @@ SITUACION_TO_STATUS: dict[str, str] = {
     "adentro en llamada": "Seguimiento",
 }
 
+INITIAL_LEAD_STATUSES = frozenset({"agendado", "pendiente", "nuevo", ""})
+
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 NULL_MARKERS = frozenset({"—", "–", "-", "", "N/A", "n/a", "null", "None"})
@@ -128,8 +130,13 @@ class ImportLogEntry:
 class ImportStats:
     leads_inserted: int = 0
     leads_skipped: int = 0
+    leads_payload_refreshed: int = 0
+    leads_propagated: int = 0
+    lead_updates_by_field: dict[str, int] = field(default_factory=dict)
     pagos_inserted: int = 0
+    pagos_updated: int = 0
     pagos_skipped: int = 0
+    pagos_usd_delta: float = 0.0
     cuotas_inserted: int = 0
     cuotas_skipped: int = 0
     cuotas_excluded: int = 0
@@ -526,13 +533,19 @@ def format_pagos_section(stats: ImportStats, expected: dict[str, Any] | None) ->
     lines = [
         "--- PAGOS ---",
         f"  Filas insertadas    : {stats.pagos_inserted}",
+        f"  Filas actualizadas  : {stats.pagos_updated}",
+        f"  Filas omitidas      : {stats.pagos_skipped}",
+    ]
+    if stats.pagos_usd_delta:
+        lines.append(f"  Delta USD updates   : {stats.pagos_usd_delta:+.2f}")
+    lines.extend([
         f"  Suma USD            : {stats.pagos_usd_total:.2f}"
         + (f"   (esperado: {float(exp_total):.2f}){ok_total}" if exp_total is not None else ""),
         f"  Suma USD julio 2026 : {stats.pagos_usd_julio:.2f}"
         + (f"   (esperado: {float(exp_julio):.2f}){ok_julio}" if exp_julio is not None else ""),
         f"  Contactos nuevos    : {stats.pagos_new_contact}",
         f"  Matcheados a lead   : {stats.pagos_matched_existing}",
-    ]
+    ])
     return lines
 
 
@@ -799,13 +812,329 @@ def legacy_id_exists_lead(uid: int, legacy_id: str) -> bool:
 
 
 def legacy_id_exists_payment(uid: int, legacy_id: str) -> bool:
+    return get_payment_by_legacy_id(uid, legacy_id) is not None
+
+
+def get_payment_by_legacy_id(uid: int, legacy_id: str) -> LeadPayment | None:
     lid = (legacy_id or "").strip()
     if not lid:
-        return False
+        return None
     for r in rows_payments_for_user(uid):
+        if (r.legacy_id or "").strip() == lid and (r.source or "") == LEGACY_SOURCE:
+            return r
+    return None
+
+
+def _recalc_payment_amount_flags(meta: dict[str, Any], monto: float, fecha: date) -> None:
+    if monto == 0:
+        meta["monto_cero"] = True
+    else:
+        meta.pop("monto_cero", None)
+    if monto in ATIPICO_MONTOS:
+        meta["monto_atipico"] = True
+    else:
+        meta.pop("monto_atipico", None)
+    if fecha > date.today():
+        meta["es_programado"] = True
+    else:
+        meta.pop("es_programado", None)
+
+
+def _append_payment_update_audit(meta: dict[str, Any], campo: str, antes: Any, despues: Any) -> None:
+    actualizaciones = meta.get("actualizaciones")
+    if not isinstance(actualizaciones, list):
+        actualizaciones = []
+    actualizaciones.append(
+        {
+            "fecha": date.today().isoformat(),
+            "campo": campo,
+            "antes": antes,
+            "despues": despues,
+            "origen": "incremental",
+        }
+    )
+    meta["actualizaciones"] = actualizaciones
+
+
+def apply_payment_update_from_csv(
+    payment: LeadPayment,
+    row: dict[str, str],
+    stats: ImportStats,
+    *,
+    dry_run: bool,
+) -> bool:
+    """Actualiza monto/fecha/concepto/producto desde CSV sin tocar lead_id."""
+    monto = float(row.get("usd") or 0)
+    fecha = parse_date(row.get("fecha")) or payment.fecha or date.today()
+    concepto = (row.get("concepto") or "").strip()
+    producto = normalize_producto_norm(row.get("producto_norm"))
+
+    old_monto = float(payment.monto or 0)
+    old_fecha = payment.fecha
+    old_concepto = (payment.concepto or "").strip()
+    old_producto = (payment.producto or "").strip()
+
+    changes: list[tuple[str, Any, Any]] = []
+    if round(monto, 2) != round(old_monto, 2):
+        changes.append(("monto", old_monto, monto))
+    if fecha != old_fecha:
+        changes.append(
+            (
+                "fecha",
+                old_fecha.isoformat() if old_fecha else "",
+                fecha.isoformat(),
+            )
+        )
+    if concepto != old_concepto:
+        changes.append(("concepto", old_concepto, concepto))
+    if producto != old_producto:
+        changes.append(("producto", old_producto, producto))
+
+    if not changes:
+        return False
+
+    stats.pagos_updated += 1
+    stats.pagos_usd_delta += monto - old_monto
+    detail = "; ".join(f"{c}:{a!r}->{d!r}" for c, a, d in changes)
+    legacy_id = (payment.legacy_id or "").strip()
+
+    if monto == 0:
+        stats.flag("monto_cero")
+    if monto in ATIPICO_MONTOS:
+        stats.flag("monto_atipico")
+    if fecha > date.today():
+        stats.flag("es_programado")
+
+    if dry_run:
+        stats.log("pago", legacy_id, "dry_run_update", detail)
+        return True
+
+    meta = dict(payment.legacy_meta) if isinstance(payment.legacy_meta, dict) else {}
+    for campo, antes, despues in changes:
+        _append_payment_update_audit(meta, campo, antes, despues)
+
+    payment.monto = monto
+    payment.fecha = fecha
+    payment.concepto = concepto
+    payment.producto = producto
+    _recalc_payment_amount_flags(meta, monto, fecha)
+    payment.legacy_meta = meta
+    flush()
+    stats.log("pago", legacy_id, "updated", detail)
+    return True
+
+
+def _csv_nonempty(val: object) -> bool:
+    s = str(val or "").strip()
+    return s.casefold() not in NULL_MARKERS
+
+
+def _append_lead_update_audit(meta: dict[str, Any], campo: str, antes: Any, despues: Any) -> None:
+    actualizaciones = meta.get("actualizaciones")
+    if not isinstance(actualizaciones, list):
+        actualizaciones = []
+    actualizaciones.append(
+        {
+            "fecha": date.today().isoformat(),
+            "campo": campo,
+            "antes": antes,
+            "despues": despues,
+            "origen": "incremental",
+        }
+    )
+    meta["actualizaciones"] = actualizaciones
+
+
+def _legacy_producto_for_lead(raw: str | None) -> str:
+    s = re.sub(r"\s*\(\$\d+\)\s*$", "", str(raw or "").strip())
+    if not _csv_nonempty(s):
+        return ""
+    prod = normalize_producto_norm(s)
+    if prod and prod not in ("Sin especificar", "Otro"):
+        return prod
+    nk = _norm_key(s)
+    if "premium" in nk and "meses" in nk:
+        return "Premium 6 meses"
+    if "vip" in nk and "anual" in nk:
+        return "VIP Anual (12 meses)"
+    if "vip" in nk:
+        return "VIP 6 meses"
+    if "express" in nk or "downsell" in nk:
+        return "Express / Downsell"
+    return prod or s
+
+
+def get_lead_ref_by_legacy_id(uid: int, legacy_id: str) -> LegacyLeadRef | None:
+    lid = (legacy_id or "").strip()
+    if not lid:
+        return None
+    for r in rows_lead_refs_for_user(uid):
         if (r.legacy_id or "").strip() == lid:
-            return True
-    return False
+            return r
+    return None
+
+
+def is_initial_lead_status(lead: Lead) -> bool:
+    st = (lead.status or lead.estado or "").strip().casefold()
+    return st in INITIAL_LEAD_STATUSES
+
+
+def refresh_lead_ref_payload(
+    ref: LegacyLeadRef,
+    row: dict[str, str],
+    stats: ImportStats,
+    *,
+    dry_run: bool,
+) -> bool:
+    new_payload = dict(row)
+    old_payload = dict(ref.payload) if isinstance(ref.payload, dict) else {}
+    if old_payload == new_payload:
+        return False
+    stats.leads_payload_refreshed += 1
+    legacy_id = (ref.legacy_id or "").strip()
+    if dry_run:
+        stats.log("lead_ref", legacy_id, "dry_run_payload_refresh", f"lead_id={ref.lead_id}")
+        return True
+    history = list(ref.payload_history) if isinstance(ref.payload_history, list) else []
+    history.append(
+        {
+            "fecha": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "payload": old_payload,
+        }
+    )
+    ref.payload_history = history
+    ref.payload = new_payload
+    flush()
+    stats.log("lead_ref", legacy_id, "payload_refresh", f"lead_id={ref.lead_id}")
+    return True
+
+
+def _record_lead_field_update(
+    stats: ImportStats,
+    lead: Lead,
+    campo: str,
+    antes: Any,
+    despues: Any,
+    *,
+    dry_run: bool,
+) -> None:
+    stats.lead_updates_by_field[campo] = stats.lead_updates_by_field.get(campo, 0) + 1
+    if dry_run:
+        return
+    meta = dict(lead.legacy_meta) if isinstance(lead.legacy_meta, dict) else {}
+    _append_lead_update_audit(meta, campo, antes, despues)
+    lead.legacy_meta = meta
+
+
+def propagate_lead_from_csv(
+    lead: Lead,
+    row: dict[str, str],
+    stats: ImportStats,
+    *,
+    dry_run: bool,
+    old_payload: dict[str, str] | None = None,
+) -> list[str]:
+    """Nivel B: propagación selectiva CSV → lead ATV (solo si el origen cambió vs payload anterior)."""
+    updated: list[str] = []
+    meta = lead.legacy_meta if isinstance(lead.legacy_meta, dict) else {}
+    prev = old_payload if isinstance(old_payload, dict) else {}
+
+    def origin_changed(csv_key: str) -> bool:
+        return (row.get(csv_key) or "").strip() != (prev.get(csv_key) or "").strip()
+
+    def apply_meta_field(campo: str, csv_key: str) -> None:
+        nonlocal meta
+        if not origin_changed(csv_key):
+            return
+        new_val = (row.get(csv_key) or "").strip()
+        old_val = (meta.get(campo) or "").strip()
+        if not _csv_nonempty(new_val) and old_val:
+            return
+        if new_val == old_val:
+            return
+        updated.append(campo)
+        _record_lead_field_update(stats, lead, campo, old_val, new_val, dry_run=dry_run)
+        if not dry_run:
+            meta = dict(meta)
+            meta[campo] = new_val
+            lead.legacy_meta = meta
+
+    apply_meta_field("presento", "presento")
+    apply_meta_field("cierre", "cierre")
+    apply_meta_field("calificado", "calificado")
+
+    if origin_changed("fecha_llamada"):
+        csv_fecha = parse_date(row.get("fecha_llamada"))
+        if csv_fecha:
+            old_call = lead.call.date().isoformat() if lead.call else ""
+            new_call = csv_fecha.isoformat()
+            if new_call != old_call:
+                updated.append("fecha_llamada")
+                _record_lead_field_update(stats, lead, "fecha_llamada", old_call, new_call, dry_run=dry_run)
+                if not dry_run:
+                    lead.call = datetime.combine(csv_fecha, datetime.min.time())
+
+    if origin_changed("producto"):
+        prog = _legacy_producto_for_lead(row.get("producto"))
+        old_prog = (lead.programa_ofrecido or "").strip()
+        if prog and not old_prog:
+            updated.append("programa_ofrecido")
+            _record_lead_field_update(stats, lead, "programa_ofrecido", old_prog, prog, dry_run=dry_run)
+            if not dry_run:
+                lead.programa_ofrecido = prog
+
+    if origin_changed("setter"):
+        csv_setter = (row.get("setter") or "").strip()
+        old_setter = (lead.setter or "").strip()
+        if _csv_nonempty(csv_setter) and not old_setter:
+            updated.append("setter")
+            _record_lead_field_update(stats, lead, "setter", old_setter, csv_setter, dry_run=dry_run)
+            if not dry_run:
+                lead.setter = csv_setter
+
+    if origin_changed("situacion"):
+        csv_situacion = (row.get("situacion") or "").strip()
+        old_situacion = (meta.get("situacion_orig") or "").strip()
+        if _csv_nonempty(csv_situacion) and is_initial_lead_status(lead) and csv_situacion != old_situacion:
+            updated.append("situacion_orig")
+            _record_lead_field_update(
+                stats, lead, "situacion_orig", old_situacion, csv_situacion, dry_run=dry_run
+            )
+            if not dry_run:
+                meta = dict(lead.legacy_meta) if isinstance(lead.legacy_meta, dict) else {}
+                meta["situacion_orig"] = csv_situacion
+                lead.legacy_meta = meta
+
+    if updated and not dry_run:
+        flush()
+    if updated:
+        stats.leads_propagated += 1
+    return updated
+
+
+def upsert_existing_lead_row(
+    uid: int,
+    row: dict[str, str],
+    stats: ImportStats,
+    *,
+    dry_run: bool,
+) -> None:
+    legacy_id = (row.get("id") or "").strip()
+    ref = get_lead_ref_by_legacy_id(uid, legacy_id)
+    if ref is None:
+        stats.leads_skipped += 1
+        return
+    old_payload = dict(ref.payload) if isinstance(ref.payload, dict) else {}
+    refresh_lead_ref_payload(ref, row, stats, dry_run=dry_run)
+    if ref.lead_id:
+        lead = Lead.get(id=int(ref.lead_id), user_id=uid)
+        if lead is not None:
+            fields = propagate_lead_from_csv(
+                lead, row, stats, dry_run=dry_run, old_payload=old_payload
+            )
+            if fields:
+                stats.log("lead", legacy_id, "dry_run_propagate" if dry_run else "propagate", ",".join(fields))
+    stats.leads_skipped += 1
 
 
 def legacy_id_exists_cuota(uid: int, legacy_id: str) -> bool:
@@ -1520,7 +1849,9 @@ class LegacyJuanoImporter:
 
     def _plan_lead_row(self, row: dict[str, str]) -> LeadRowPlan | None:
         legacy_id = (row.get("id") or "").strip()
-        if legacy_id_processed(self.user_id, legacy_id):
+        if legacy_id_exists_lead_ref(self.user_id, legacy_id):
+            return None
+        if legacy_id_exists_lead(self.user_id, legacy_id):
             self.stats.leads_skipped += 1
             return None
 
@@ -1756,6 +2087,21 @@ class LegacyJuanoImporter:
         rows = self._read_csv("leads.csv")
         plans: list[LeadRowPlan] = []
         for row in rows:
+            legacy_id = (row.get("id") or "").strip()
+            nombre = unicodedata.normalize("NFKC", (row.get("nombre") or "").strip())
+            email = (row.get("correo") or "").strip().casefold()
+            if is_test_lead(nombre, email):
+                self.stats.leads_excluded += 1
+                self.stats.excluded_leads.append(
+                    {"legacy_id": legacy_id, "nombre": nombre, "email": email, "reason": "es_prueba"}
+                )
+                self.stats.log("lead", legacy_id, "excluded_es_prueba", nombre)
+                continue
+            if legacy_id_exists_lead_ref(self.user_id, legacy_id):
+                upsert_existing_lead_row(
+                    self.user_id, row, self.stats, dry_run=self.dry_run
+                )
+                continue
             plan = self._plan_lead_row(row)
             if plan is not None:
                 plans.append(plan)
@@ -1855,11 +2201,15 @@ class LegacyJuanoImporter:
     def import_pagos(self) -> None:
         rows = self._read_csv("pagos.csv")
         all_payments = rows_payments_for_user(self.user_id)
+        new_usd_total = 0.0
+        new_usd_julio = 0.0
 
         for row in rows:
             legacy_id = (row.get("id") or "").strip()
-            if legacy_id_exists_payment(self.user_id, legacy_id):
-                self.stats.pagos_skipped += 1
+            existing = get_payment_by_legacy_id(self.user_id, legacy_id)
+            if existing is not None:
+                if not apply_payment_update_from_csv(existing, row, self.stats, dry_run=self.dry_run):
+                    self.stats.pagos_skipped += 1
                 continue
 
             email = extract_email(row.get("notas"), row.get("cliente"))
@@ -1867,9 +2217,9 @@ class LegacyJuanoImporter:
             nombre = unicodedata.normalize("NFKC", (row.get("cliente") or "").strip())
             monto = float(row.get("usd") or 0)
             fecha = parse_date(row.get("fecha")) or date.today()
-            self.stats.pagos_usd_total += monto
+            new_usd_total += monto
             if fecha.year == 2026 and fecha.month == 7:
-                self.stats.pagos_usd_julio += monto
+                new_usd_julio += monto
 
             lead, method, _score = resolve_lead(
                 self.user_id,
@@ -1990,7 +2340,22 @@ class LegacyJuanoImporter:
             all_payments.append(payment)
             self.stats.pagos_inserted += 1
 
-        if not self.dry_run:
+        if self.dry_run:
+            self.stats.pagos_usd_total = round(
+                sum(float(r.get("usd") or 0) for r in rows),
+                2,
+            )
+            self.stats.pagos_usd_julio = round(
+                sum(
+                    float(r.get("usd") or 0)
+                    for r in rows
+                    if (d := parse_date(r.get("fecha"))) and d.year == 2026 and d.month == 7
+                ),
+                2,
+            )
+        else:
+            self.stats.pagos_usd_total = round(new_usd_total, 2)
+            self.stats.pagos_usd_julio = round(new_usd_julio, 2)
             touched_ids = {int(p.lead_id) for p in all_payments if (p.source or "") == LEGACY_SOURCE}
             for lead in rows_leads_for_user(self.user_id):
                 if int(lead.id) in touched_ids:
@@ -2140,6 +2505,9 @@ def write_import_summary(
         "applied": {
             "leads": {
                 "total": stats.leads_inserted,
+                "payload_refreshed": stats.leads_payload_refreshed,
+                "propagated": stats.leads_propagated,
+                "updates_by_field": stats.lead_updates_by_field,
                 "new": stats.leads_created_new,
                 "merged": stats.leads_merged,
                 "absorbed": stats.merge_absorbed,
@@ -2147,6 +2515,9 @@ def write_import_summary(
             },
             "pagos": {
                 "inserted": stats.pagos_inserted,
+                "updated": stats.pagos_updated,
+                "skipped": stats.pagos_skipped,
+                "usd_delta": round(stats.pagos_usd_delta, 2),
                 "usd_total": round(stats.pagos_usd_total, 2),
                 "usd_julio": round(stats.pagos_usd_julio, 2),
             },
@@ -2273,6 +2644,11 @@ def format_summary(
 
     lines.extend([
         f"Leads insertados/mergeados: {stats.leads_inserted} (omitidos: {stats.leads_skipped})",
+        f"  payload refrescados: {stats.leads_payload_refreshed} | propagados: {stats.leads_propagated}",
+    ])
+    if stats.lead_updates_by_field:
+        lines.append("  updates por campo: " + ", ".join(f"{k}={v}" for k, v in sorted(stats.lead_updates_by_field.items())))
+    lines.extend([
         f"  ambiguo: {stats.match_ambiguo} | posible_dup nombre: {stats.posible_duplicado_nombre}",
     ])
     lines.extend(format_pagos_section(stats, expected))

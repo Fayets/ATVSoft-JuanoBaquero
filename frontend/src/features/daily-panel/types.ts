@@ -20,6 +20,8 @@ export type ManualCallInput = {
   client_name: string
   closer: string
   hora: string
+  /** YYYY-MM-DD del slot call; default hoy en timezone del tenant. */
+  fecha?: string
   ig_handle?: string
 }
 

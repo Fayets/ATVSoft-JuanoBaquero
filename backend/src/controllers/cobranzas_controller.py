@@ -1,4 +1,4 @@
-"""Cobranzas: deudores (Lead.debe > 0) + historial de pagos independiente."""
+"""Cobranzas: deudores (Lead.debe > 0) + historial de pagos."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pony.orm import ObjectNotFound, db_session
 from src.models import Lead, LeadPayment
 from src.schemas import (
     CobranzaLeadOut,
+    CobranzaLeadPatchRequest,
     CobranzaPagoMonthEntryOut,
     CobranzaPerfilOut,
     CobranzasListResponse,
@@ -19,6 +20,11 @@ from src.schemas import (
     LeadPaymentCreateRequest,
     LeadPaymentOut,
     LeadPaymentPatchRequest,
+)
+from src.services.lead_financials_service import (
+    merge_meta,
+    normalize_concepto,
+    recalc_lead_from_db,
 )
 
 router = APIRouter(prefix="/api/cobranzas", tags=["cobranzas"], redirect_slashes=False)
@@ -77,12 +83,25 @@ def _today_bogota() -> date:
     return datetime.now(timezone.utc).astimezone(_BOGOTA).date()
 
 
+def _precio_contrato_from_lead(lead: Lead) -> float | None:
+    meta = lead.legacy_meta if isinstance(lead.legacy_meta, dict) else {}
+    pc = meta.get("precio_contrato")
+    if pc is None:
+        return None
+    try:
+        val = float(pc)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
 def _payment_out(row: LeadPayment) -> LeadPaymentOut:
     return LeadPaymentOut(
         id=str(row.id),
         lead_id=str(row.lead_id),
         monto=float(row.monto or 0),
         fecha=_date_iso(row.fecha),
+        concepto=(row.concepto or "").strip(),
         nota=row.nota or "",
         comprobante_url=(getattr(row, "comprobante_url", None) or "").strip() or None,
         created_at=_dt_iso(row.created_at),
@@ -90,6 +109,7 @@ def _payment_out(row: LeadPayment) -> LeadPaymentOut:
 
 
 def _lead_summary(lead: Lead, total_hist: float, count: int) -> CobranzaLeadOut:
+    debe_raw = lead.debe
     return CobranzaLeadOut(
         id=str(lead.id),
         nombre=lead.nombre or "",
@@ -102,7 +122,9 @@ def _lead_summary(lead: Lead, total_hist: float, count: int) -> CobranzaLeadOut:
         setter=lead.setter or "",
         programa_ofrecido=lead.programa_ofrecido or "",
         pago=float(lead.pago or 0),
-        debe=float(lead.debe or 0),
+        debe=float(debe_raw) if debe_raw is not None else None,
+        precio_contrato=_precio_contrato_from_lead(lead),
+        debe_desconocido=debe_raw is None,
         comprobante_url=(getattr(lead, "comprobante_url", None) or "").strip() or None,
         total_pagado_historial=float(total_hist),
         cantidad_pagos=int(count),
@@ -137,13 +159,19 @@ def _sum_cuotas_lead(uid: int, lead_id: int, exclude_pago_id: int | None = None)
     return total
 
 
+def _debe_is_unknown(lead: Lead) -> bool:
+    return lead.debe is None
+
+
 def _assert_cuota_within_debt(
     lead: Lead,
     uid: int,
     nuevo_monto: float,
     exclude_pago_id: int | None = None,
 ) -> None:
-    """La suma de cuotas no puede superar Lead.debe (sin saldo a favor)."""
+    """La suma de cuotas no puede superar Lead.debe cuando la deuda es conocida."""
+    if _debe_is_unknown(lead):
+        return
     deuda_max = float(lead.debe or 0)
     if deuda_max <= 0:
         raise HTTPException(
@@ -160,6 +188,26 @@ def _assert_cuota_within_debt(
                 f"(deuda Leads {deuda_max:.2f}, ya cargado {ya:.2f})."
             ),
         )
+
+
+def _require_concepto(raw: str | None) -> str:
+    concepto = normalize_concepto(raw)
+    if not concepto:
+        raise HTTPException(
+            status_code=400,
+            detail="concepto inválido (PIF, 1ra Cuota, 2da Cuota, 3ra Cuota, Fee, Otro).",
+        )
+    return concepto
+
+
+def _get_lead_for_user(uid: int, lid: int) -> Lead:
+    try:
+        lead = Lead[lid]
+    except ObjectNotFound as e:
+        raise HTTPException(status_code=404, detail="Lead no encontrado.") from e
+    if int(lead.user_id) != uid:
+        raise HTTPException(status_code=404, detail="Lead no encontrado.") from e
+    return lead
 
 
 def _parse_month_query(month: str | None) -> tuple[int, int] | None:
@@ -181,13 +229,13 @@ def _parse_month_query(month: str | None) -> tuple[int, int] | None:
 def list_deudores(
     user_id: Annotated[str, Depends(require_user_id)],
 ) -> CobranzasListResponse:
-    """Leads con debe > 0 (referencia de la tabla leads) + resumen de historial."""
+    """Leads con debe > 0 + resumen de historial."""
     uid = _parse_uid(user_id)
     with db_session:
         leads = [
             r
             for r in list(Lead.select())
-            if int(r.user_id) == uid and float(r.debe or 0) > 0
+            if int(r.user_id) == uid and r.debe is not None and float(r.debe) > 0
         ]
         leads.sort(
             key=lambda r: (
@@ -207,7 +255,7 @@ def list_pagos_month(
     user_id: Annotated[str, Depends(require_user_id)],
     month: str = Query(..., description="YYYY-MM; filtra por fecha del pago"),
 ) -> CobranzasMonthPagosOut:
-    """Total de cuotas/pagos del historial cobranzas en el mes (no toca Lead.pago/debe)."""
+    """Total de cuotas/pagos del historial cobranzas en el mes."""
     uid = _parse_uid(user_id)
     month_key = _parse_month_query(month)
     if month_key is None:
@@ -216,7 +264,6 @@ def list_pagos_month(
     month_str = f"{year_m}-{month_m:02d}"
 
     with db_session:
-        # Solo cuotas de leads existentes (limpia huérfanas si el lead ya no está).
         alive_lead_ids = {
             int(r.id) for r in list(Lead.select()) if int(r.user_id) == uid
         }
@@ -271,13 +318,7 @@ def get_perfil(
         raise HTTPException(status_code=400, detail="lead_id inválido") from e
 
     with db_session:
-        try:
-            lead = Lead[lid]
-        except ObjectNotFound as e:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.") from e
-        if int(lead.user_id) != uid:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.")
-
+        lead = _get_lead_for_user(uid, lid)
         pagos_rows = [
             p
             for p in list(LeadPayment.select())
@@ -297,6 +338,30 @@ def get_perfil(
         )
 
 
+@router.patch("/{lead_id}", response_model=CobranzaLeadOut)
+def patch_lead_contrato(
+    lead_id: str,
+    body: CobranzaLeadPatchRequest,
+    user_id: Annotated[str, Depends(require_user_id)],
+) -> CobranzaLeadOut:
+    """Registra precio de contrato en legacy_meta y recalcula debe."""
+    uid = _parse_uid(user_id)
+    try:
+        lid = int(lead_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="lead_id inválido") from e
+
+    with db_session:
+        lead = _get_lead_for_user(uid, lid)
+        lead.legacy_meta = merge_meta(
+            getattr(lead, "legacy_meta", None),
+            {"precio_contrato": float(body.precio_contrato)},
+        )
+        recalc_lead_from_db(uid, lead)
+        hist = _hist_for_leads(uid, [lid]).get(lid, (0.0, 0))
+        return _lead_summary(lead, *hist)
+
+
 @router.post("/{lead_id}/pagos", response_model=LeadPaymentOut)
 def create_pago(
     lead_id: str,
@@ -312,25 +377,23 @@ def create_pago(
     fecha_val = _parse_date_in(body.fecha) if body.fecha else _today_bogota()
     if fecha_val is None:
         raise HTTPException(status_code=400, detail="fecha inválida (usar YYYY-MM-DD).")
+    concepto = _require_concepto(body.concepto)
 
     with db_session:
-        try:
-            lead = Lead[lid]
-        except ObjectNotFound as e:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.") from e
-        if int(lead.user_id) != uid:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.")
-
+        lead = _get_lead_for_user(uid, lid)
         _assert_cuota_within_debt(lead, uid, float(body.monto))
 
         row = LeadPayment(
             user_id=uid,
             lead_id=lid,
+            source="atv",
             monto=float(body.monto),
             fecha=fecha_val,
-            nota=(body.nota or "").strip() or "Cuota",
+            concepto=concepto,
+            nota=(body.nota or "").strip() or concepto,
             comprobante_url=(body.comprobante_url or "").strip(),
         )
+        recalc_lead_from_db(uid, lead)
         return _payment_out(row)
 
 
@@ -358,12 +421,7 @@ def patch_pago(
         if int(row.user_id) != uid:
             raise HTTPException(status_code=404, detail="Pago no encontrado.")
 
-        try:
-            lead = Lead[int(row.lead_id)]
-        except ObjectNotFound as e:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.") from e
-        if int(lead.user_id) != uid:
-            raise HTTPException(status_code=404, detail="Lead no encontrado.")
+        lead = _get_lead_for_user(uid, int(row.lead_id))
 
         nuevo_monto = float(data["monto"]) if "monto" in data and data["monto"] is not None else float(row.monto or 0)
         _assert_cuota_within_debt(lead, uid, nuevo_monto, exclude_pago_id=int(row.id))
@@ -375,11 +433,14 @@ def patch_pago(
             if parsed is None:
                 raise HTTPException(status_code=400, detail="fecha inválida (usar YYYY-MM-DD).")
             row.fecha = parsed
+        if "concepto" in data and data["concepto"] is not None:
+            row.concepto = _require_concepto(data["concepto"])
         if "nota" in data:
-            row.nota = (data["nota"] or "").strip() or "Cuota"
+            row.nota = (data["nota"] or "").strip() or (row.concepto or "Cuota")
         if "comprobante_url" in data:
             row.comprobante_url = (data["comprobante_url"] or "").strip()
 
+        recalc_lead_from_db(uid, lead)
         return _payment_out(row)
 
 
@@ -401,6 +462,8 @@ def delete_pago(
             raise HTTPException(status_code=404, detail="Pago no encontrado.") from e
         if int(row.user_id) != uid:
             raise HTTPException(status_code=404, detail="Pago no encontrado.")
+        lead = _get_lead_for_user(uid, int(row.lead_id))
         row.delete()
+        recalc_lead_from_db(uid, lead)
 
     return {"status": "ok", "id": str(pid)}

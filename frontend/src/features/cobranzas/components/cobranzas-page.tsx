@@ -45,7 +45,10 @@ export function CobranzasPage() {
   }, [fetchItems])
 
   const filtered = useMemo(() => {
-    const withDebt = items.filter((d) => debeRestante(d) > 0)
+    const withDebt = items.filter((d) => {
+      const saldo = debeRestante(d)
+      return saldo != null && saldo > 0
+    })
     const q = search.trim().toLowerCase()
     if (!q) return withDebt
     return withDebt.filter((d) => {
@@ -60,7 +63,7 @@ export function CobranzasPage() {
     let debe = 0
     let hist = 0
     for (const d of filtered) {
-      debe += debeRestante(d)
+      debe += debeRestante(d) ?? 0
       hist += Number(d.total_pagado_historial) || 0
     }
     return { debe, hist, count: filtered.length }
@@ -195,7 +198,7 @@ export function CobranzasPage() {
                     <td className="px-3 py-2.5 text-[12px] text-[var(--text2)]">{d.closer || '—'}</td>
                     <td className="px-3 py-2.5 text-right">
                       <span className="font-mono-num text-[13px] font-semibold text-[var(--amber)]">
-                        {formatCash(debeRestante(d))}
+                        {formatCash(debeRestante(d) ?? 0)}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-right">

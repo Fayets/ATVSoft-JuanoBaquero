@@ -5,6 +5,12 @@ import { useAuthUser } from '@/shared/hooks/use-auth-user'
 import { useToast } from '@/shared/components/toast'
 import { formatIsoDateDdMmYyyy } from '@/shared/lib/format-utils'
 import { addDaysIso } from '@/features/weekly-reports/services/weekly-reports-service'
+import { useTimezone } from '@/shared/hooks/use-timezone'
+import {
+  DEFAULT_TIMEZONE,
+  isDateBeforeToday,
+  todayIsoInTimeZone,
+} from '@/shared/lib/timezone'
 import {
   createManualCall,
   generateCloserReportsForDay,
@@ -38,15 +44,10 @@ import { DailyCallsTable } from './daily-calls-table'
 import '../daily-panel.css'
 import '../daily-panel-manual-call.css'
 
-const AR_TZ = 'America/Argentina/Buenos_Aires'
-
-function todayIsoAr(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: AR_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
+function confirmPastDayAction(dateLabel: string, action: string): boolean {
+  return window.confirm(
+    `Estás viendo el ${dateLabel}. ${action} puede modificar datos de ese día. ¿Continuar?`,
+  )
 }
 
 function PanelShell({ children }: { children: ReactNode }) {
@@ -68,7 +69,9 @@ export function DailyPanelPage({
   const isAdmin = mode === 'admin' && Boolean(adminToken)
   const { ready, userId } = useAuthUser()
   const { toast } = useToast()
-  const [selectedDate, setSelectedDate] = useState(todayIsoAr)
+  const { timeZone, option } = useTimezone()
+  const todayIso = useMemo(() => todayIsoInTimeZone(timeZone), [timeZone])
+  const [selectedDate, setSelectedDate] = useState(() => todayIsoInTimeZone(DEFAULT_TIMEZONE))
   const [fecha, setFecha] = useState('')
   const [calls, setCalls] = useState<DailyCall[]>([])
   const [closerOptions, setCloserOptions] = useState<string[]>([])
@@ -356,7 +359,12 @@ export function DailyPanelPage({
           hora,
         })
       } else {
-        await createManualCall({ client_name: name, closer, hora })
+        await createManualCall({
+          client_name: name,
+          closer,
+          hora,
+          fecha: selectedDate,
+        })
       }
       toast('Llamada agregada.')
       setManualOpen(false)
@@ -380,6 +388,13 @@ export function DailyPanelPage({
       toast('No hay llamadas en el panel para generar reportes.')
       return
     }
+    const dateLabel = formatIsoDateDdMmYyyy(reportDate)
+    if (
+      isDateBeforeToday(reportDate, timeZone) &&
+      !confirmPastDayAction(dateLabel, 'Generar reporte')
+    ) {
+      return
+    }
     setGeneratingReport(true)
     try {
       const result = await generateCloserReportsForDay(reportDate)
@@ -394,12 +409,16 @@ export function DailyPanelPage({
     } finally {
       setGeneratingReport(false)
     }
-  }, [selectedDate, fecha, calls.length, toast])
+  }, [selectedDate, fecha, calls.length, toast, timeZone])
 
   const handleRefresh = useCallback(async () => {
     if (!ready || !userId || !metaReady) return
     if (isAdmin && !adminToken) return
-    const day = selectedDate || todayIsoAr()
+    const day = selectedDate || todayIso
+    const dateLabel = formatIsoDateDdMmYyyy(day)
+    if (isDateBeforeToday(day, timeZone) && !confirmPastDayAction(dateLabel, 'Actualizar GHL')) {
+      return
+    }
     setLoading(true)
     try {
       const sync = await syncGhlForDay(day)
@@ -432,10 +451,12 @@ export function DailyPanelPage({
     closerOptions,
     defaultCloser,
     toast,
+    timeZone,
+    todayIso,
   ])
 
   const handleAssignTriajers = useCallback(async () => {
-    const day = selectedDate || todayIsoAr()
+    const day = selectedDate || todayIso
     const missing = calls.filter((c) => !(c.triajer || '').trim()).length
     if (missing === 0) {
       toast('Todas las llamadas del día ya tienen triajer.')
@@ -463,11 +484,15 @@ export function DailyPanelPage({
     } finally {
       setAssigningTriajers(false)
     }
-  }, [selectedDate, calls, triajerOptions.length, toast, fetchCalls])
+  }, [selectedDate, calls, triajerOptions.length, toast, fetchCalls, todayIso])
 
   const shiftDay = useCallback((delta: number) => {
-    setSelectedDate((prev) => addDaysIso(prev || todayIsoAr(), delta))
-  }, [])
+    setSelectedDate((prev) => addDaysIso(prev || todayIso, delta))
+  }, [todayIso])
+
+  const goToToday = useCallback(() => {
+    setSelectedDate(todayIso)
+  }, [todayIso])
 
   const closerFilterOptions = useMemo(() => {
     const names = new Set<string>()
@@ -520,6 +545,7 @@ export function DailyPanelPage({
 
   const activeDate = fecha || selectedDate
   const fechaLabel = activeDate ? formatIsoDateDdMmYyyy(activeDate) : '—'
+  const viewingPast = activeDate ? isDateBeforeToday(activeDate, timeZone) : false
   const isFiltered = Boolean(closerFilter || nameSearch.trim())
   const countLabel =
     isFiltered && filteredCalls.length !== calls.length
@@ -553,24 +579,33 @@ export function DailyPanelPage({
             >
               Siguiente →
             </button>
+            <button
+              type="button"
+              className="neo-panel__day-nav-btn neo-panel__day-nav-btn--today"
+              onClick={goToToday}
+              disabled={loading || selectedDate === todayIso}
+              title="Volver al día de hoy"
+            >
+              Hoy
+            </button>
           </div>
           <p className="neo-panel__subtitle">
-            Argentina
+            {option.label}
+            {viewingPast ? ' · día anterior' : ''}
             {isAdmin ? ' · modo admin' : ''}
           </p>
         </div>
         <div className="neo-panel__header-meta">
-          {isAdmin ? (
-            <label className="neo-panel__date-field">
-              <span className="sr-only">Fecha</span>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="neo-panel__date-input"
-              />
-            </label>
-          ) : null}
+          <label className="neo-panel__date-field">
+            <span className="sr-only">Fecha</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="neo-panel__date-input"
+              disabled={loading}
+            />
+          </label>
           <ArgentinaClock active={ready && Boolean(userId)} />
           <button
             type="button"
@@ -660,6 +695,7 @@ export function DailyPanelPage({
           onProgramOfferedChange={handleProgramOfferedChange}
           onProgramadaOfrecidoChange={handleProgramadaOfrecidoChange}
           onAddManualCall={() => setManualOpen(true)}
+          emptyDateLabel={fechaLabel !== '—' ? fechaLabel : undefined}
         />
       </section>
 
@@ -671,9 +707,7 @@ export function DailyPanelPage({
               Agregar llamada manual
             </h3>
             <p className="neo-manual-call__hint">
-              {isAdmin
-                ? `El lead se crea para el ${formatIsoDateDdMmYyyy(selectedDate)} y aparece en la tabla leads.`
-                : 'El lead se crea en la tabla leads y aparece en el panel de hoy.'}
+              {`El lead se crea para el ${formatIsoDateDdMmYyyy(selectedDate)} y aparece en el panel de ese día.`}
             </p>
             <label className="neo-manual-call__field">
               <span>Nombre del lead</span>

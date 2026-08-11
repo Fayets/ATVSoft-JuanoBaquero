@@ -44,6 +44,8 @@ type Props = {
   onProgramOfferedChange: (leadId: number, program: string) => Promise<void>
   onProgramadaOfrecidoChange: (leadId: number, program: string) => Promise<void>
   onAddManualCall?: () => void
+  /** Etiqueta del día seleccionado para mensajes vacíos (ej. 29/07/2026). */
+  emptyDateLabel?: string
 }
 
 function programSelectOptions(programOptions: string[], current: string): string[] {
@@ -621,6 +623,7 @@ export const DailyCallsTable = memo(function DailyCallsTable({
   onProgramOfferedChange,
   onProgramadaOfrecidoChange,
   onAddManualCall,
+  emptyDateLabel,
 }: Props) {
   const [page, setPage] = useState(1)
   const closerSelectOptions = useMemo(
@@ -648,7 +651,11 @@ export const DailyCallsTable = memo(function DailyCallsTable({
   if (items.length === 0) {
     return (
       <div className="neo-panel__empty neo-panel__empty--actions">
-        <p>No hay llamadas agendadas para hoy.</p>
+        <p>
+          {emptyDateLabel
+            ? `No hay llamadas para el ${emptyDateLabel}.`
+            : 'No hay llamadas para este día.'}
+        </p>
         {onAddManualCall ? (
           <button type="button" className="neo-panel__btn" onClick={onAddManualCall}>
             + Agregar llamada manual

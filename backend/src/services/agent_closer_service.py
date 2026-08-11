@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 
 from pony.orm import db_session
 
-from src.models import Lead
+from src.models import AuthUser, Lead
+from src.user_timezone import today_in_zone, zoneinfo_from_name
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 BOGOTA_TZ = ZoneInfo("America/Bogota")
@@ -50,6 +51,12 @@ def _leads_with_call(user_id: int) -> list[Lead]:
     ]
 
 
+def _tz_for_user(user_id: int) -> ZoneInfo:
+    user = AuthUser.get(id=user_id)
+    raw = getattr(user, "timezone", None) if user is not None else None
+    return zoneinfo_from_name(raw)
+
+
 def _leads_call_between(user_id: int, inicio: datetime, fin: datetime) -> list[Lead]:
     """Solo leads con `call` en [inicio, fin]."""
     # Filtro en Python: Pony 0.7.x no decompila bien `>=` / `<=` en Python 3.13.
@@ -64,13 +71,14 @@ def _leads_call_between(user_id: int, inicio: datetime, fin: datetime) -> list[L
 
 @db_session
 def list_llamadas_hoy(user_id: int) -> dict:
-    hoy = datetime.now(BOGOTA_TZ).date()
-    return list_llamadas_dia(user_id, hoy)
+    tz = _tz_for_user(user_id)
+    return list_llamadas_dia(user_id, today_in_zone(tz), tz)
 
 
 @db_session
-def list_llamadas_dia(user_id: int, fecha: date) -> dict:
-    inicio, fin = _day_bounds_utc_naive(fecha, BOGOTA_TZ)
+def list_llamadas_dia(user_id: int, fecha: date, tz: ZoneInfo | None = None) -> dict:
+    zone = tz or _tz_for_user(user_id)
+    inicio, fin = _day_bounds_utc_naive(fecha, zone)
     rows = _leads_call_between(user_id, inicio, fin)
     rows.sort(key=lambda l: l.call or datetime.min)
     return {

@@ -19,14 +19,15 @@ from src.schemas import (
     LlamadasHoyOut,
     ManualCallCreateRequest,
 )
+from src.services.admin_panel_service import parse_call_hora_for_date
 from src.services.agent_closer_service import (
-    AR_TZ,
-    BOGOTA_TZ,
     _day_bounds_utc_naive,
     _leads_call_between,
+    _tz_for_user,
     list_llamadas_dia,
     list_llamadas_hoy,
 )
+from src.user_timezone import today_in_zone
 from src.services.triajer_service import assign_triajers_to_leads, pick_next_triajer
 from src.services.programs_services import (
     build_program_norm_price_map,
@@ -379,17 +380,13 @@ def create_lead(
         return _to_lead_out(row, norm_prices)
 
 
-def _parse_call_hora_today(hora: str) -> datetime:
-    raw = (hora or "").strip()
-    match = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
-    if not match:
-        raise HTTPException(status_code=400, detail="Hora inválida (usar HH:MM).")
-    hour = int(match.group(1))
-    minute = int(match.group(2))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise HTTPException(status_code=400, detail="Hora inválida (usar HH:MM).")
-    hoy = datetime.now(AR_TZ).date()
-    return datetime.combine(hoy, time(hour=hour, minute=minute))
+def _parse_manual_call_fecha(raw: str | None, uid: int) -> date:
+    if raw and str(raw).strip():
+        try:
+            return date.fromisoformat(str(raw).strip())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="fecha inválida (usar YYYY-MM-DD).") from e
+    return today_in_zone(_tz_for_user(uid))
 
 
 def _normalize_calificacion_llamada(raw: str | None) -> str:
@@ -410,11 +407,15 @@ def create_manual_call(
     except ValueError as e:
         raise HTTPException(status_code=400, detail="user_id inválido") from e
 
-    call_at = _parse_call_hora_today(body.hora)
-    now_ar = datetime.now(AR_TZ).replace(tzinfo=None)
-    anchor = datetime(now_ar.year, now_ar.month, 15, 15, 0, 0)
-
     with db_session:
+        call_date = _parse_manual_call_fecha(body.fecha, uid)
+        try:
+            call_at = parse_call_hora_for_date(body.hora, call_date)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        now_local = datetime.now(_tz_for_user(uid)).replace(tzinfo=None)
+        anchor = datetime(now_local.year, now_local.month, 15, 15, 0, 0)
+
         row = LeadEntity(
             user_id=uid,
             nombre=(body.client_name or "").strip(),
@@ -426,7 +427,7 @@ def create_manual_call(
             triajer=pick_next_triajer(uid),
             triaje_hecho=False,
             fecha_bot=anchor,
-            agendo=now_ar,
+            agendo=now_local,
             agendo_en="Panel diario",
             call=call_at,
             formulario={},
@@ -481,9 +482,10 @@ def asignar_triajers_dia(
     except ValueError as e:
         raise HTTPException(status_code=400, detail="user_id inválido") from e
 
-    target = fecha or datetime.now(AR_TZ).date()
     with db_session:
-        inicio, fin = _day_bounds_utc_naive(target, BOGOTA_TZ)
+        tz = _tz_for_user(uid)
+        target = fecha or today_in_zone(tz)
+        inicio, fin = _day_bounds_utc_naive(target, tz)
         rows = _leads_call_between(uid, inicio, fin)
         missing = [l for l in rows if not (getattr(l, "triajer", None) or "").strip()]
         if not missing:

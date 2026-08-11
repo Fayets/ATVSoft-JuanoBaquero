@@ -13,8 +13,10 @@ import { uploadComprobante } from '../services/upload-comprobante'
 import {
   CobranzaPerfil,
   LeadPayment,
+  PAYMENT_CONCEPTOS,
   debeRestante,
   formatIsoDateToDdMmYyyy,
+  suggestPaymentConcepto,
   todayIsoLocal,
 } from '../types'
 
@@ -34,6 +36,9 @@ export function CobranzaPerfilPage() {
 
   const [formMonto, setFormMonto] = useState('')
   const [formFecha, setFormFecha] = useState(todayIsoLocal())
+  const [formConcepto, setFormConcepto] = useState<string>('1ra Cuota')
+  const [formPrecioContrato, setFormPrecioContrato] = useState('')
+  const [savingContrato, setSavingContrato] = useState(false)
   const [formFile, setFormFile] = useState<File | null>(null)
   const [formExistingUrl, setFormExistingUrl] = useState<string | null>(null)
   const [clearComprobante, setClearComprobante] = useState(false)
@@ -69,8 +74,16 @@ export function CobranzaPerfilPage() {
     load()
   }, [load])
 
-  const maxCuotaPermitida = (editing: LeadPayment | null): number => {
-    if (!perfil) return 0
+  useEffect(() => {
+    if (!perfil) return
+    setFormPrecioContrato(
+      perfil.lead.precio_contrato != null ? String(perfil.lead.precio_contrato) : '',
+    )
+  }, [perfil?.lead.id, perfil?.lead.precio_contrato])
+
+  const maxCuotaPermitida = (editing: LeadPayment | null): number | null => {
+    if (!perfil) return null
+    if (perfil.lead.debe_desconocido || perfil.lead.debe == null) return null
     const deuda = Number(perfil.lead.debe) || 0
     const hist = Number(perfil.lead.total_pagado_historial) || 0
     const liberado = editing ? Number(editing.monto) || 0 : 0
@@ -80,13 +93,14 @@ export function CobranzaPerfilPage() {
   const openAdd = () => {
     if (!perfil) return
     const max = maxCuotaPermitida(null)
-    if (max <= 0) {
+    if (max != null && max <= 0) {
       toast('No queda deuda por cobrar.')
       return
     }
     setEditPago(null)
     setFormMonto('')
     setFormFecha(todayIsoLocal())
+    setFormConcepto(suggestPaymentConcepto(perfil.pagos))
     setFormFile(null)
     setFormExistingUrl(null)
     setClearComprobante(false)
@@ -97,6 +111,7 @@ export function CobranzaPerfilPage() {
     setEditPago(p)
     setFormMonto(String(p.monto ?? ''))
     setFormFecha((p.fecha || '').slice(0, 10) || todayIsoLocal())
+    setFormConcepto((p.concepto || '').trim() || 'Otro')
     setFormFile(null)
     setFormExistingUrl(p.comprobante_url || null)
     setClearComprobante(false)
@@ -114,8 +129,12 @@ export function CobranzaPerfilPage() {
       return
     }
     const max = maxCuotaPermitida(editPago)
-    if (monto > max + 1e-9) {
+    if (max != null && monto > max + 1e-9) {
       toast(`La cuota no puede superar ${formatCash(max)} (sin saldo a favor).`)
+      return
+    }
+    if (!formConcepto.trim()) {
+      toast('Seleccioná un concepto.')
       return
     }
     setBusy(true)
@@ -132,7 +151,8 @@ export function CobranzaPerfilPage() {
       const body: Record<string, unknown> = {
         monto,
         fecha: formFecha.trim(),
-        nota: 'Cuota',
+        concepto: formConcepto.trim(),
+        nota: formConcepto.trim(),
       }
       if (comprobante_url !== undefined) {
         body.comprobante_url = comprobante_url
@@ -223,6 +243,38 @@ export function CobranzaPerfilPage() {
     }
   }
 
+  const savePrecioContrato = async () => {
+    const val = Number(String(formPrecioContrato).replace(',', '.'))
+    if (!Number.isFinite(val) || val <= 0) {
+      toast('Ingresá un precio de contrato válido mayor a 0.')
+      return
+    }
+    setSavingContrato(true)
+    try {
+      const res = await apiFetch(`/cobranzas/${encodeURIComponent(leadId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ precio_contrato: val }),
+      })
+      const raw = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const detail =
+          typeof raw === 'object' && raw && 'detail' in raw
+            ? String((raw as { detail: unknown }).detail)
+            : res.statusText
+        toast(`No se pudo guardar: ${detail}`)
+        return
+      }
+      toast('Precio de contrato guardado.')
+      window.dispatchEvent(new Event('atvmkt-cobranzas-changed'))
+      await load()
+    } catch (e) {
+      toast(`Error: ${e instanceof Error ? e.message : 'desconocido'}`)
+    } finally {
+      setSavingContrato(false)
+    }
+  }
+
   if (loading || !ready) {
     return <div className="py-12 text-center text-[var(--text3)]">Cargando...</div>
   }
@@ -243,6 +295,8 @@ export function CobranzaPerfilPage() {
 
   const { lead, pagos } = perfil
   const saldo = debeRestante(lead)
+  const saldoLabel = saldo == null ? 'Sin tope' : formatCash(saldo)
+  const puedeAgregar = saldo == null || saldo > 0
   const contactBits = [
     lead.ig ? `@${lead.ig.replace(/^@/, '')}` : '',
     lead.telefono || '',
@@ -265,7 +319,15 @@ export function CobranzaPerfilPage() {
               Debe
             </span>
             <span className="font-mono-num font-semibold text-[var(--amber)]">
-              {formatCash(saldo)}
+              {saldoLabel}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text3)]">
+              Pagado (Leads)
+            </span>
+            <span className="font-mono-num font-semibold text-[var(--text)]">
+              {formatCash(lead.pago)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -279,7 +341,7 @@ export function CobranzaPerfilPage() {
           <button
             type="button"
             onClick={openAdd}
-            disabled={saldo <= 0}
+            disabled={!puedeAgregar}
             className="shrink-0 whitespace-nowrap rounded-lg bg-[var(--accent)] px-4 py-2 text-[11px] font-semibold uppercase text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Agregar cuota
@@ -320,10 +382,50 @@ export function CobranzaPerfilPage() {
             </span>
           </div>
         </div>
+        {lead.debe_desconocido ? (
+          <p className="mt-2 rounded-md border border-[var(--amber)]/30 bg-[var(--amber)]/10 px-3 py-2 text-[12px] text-[var(--amber)]">
+            Este cliente no tiene monto de contrato registrado. Podés cargar pagos sin tope o
+            completar el precio del contrato abajo.
+          </p>
+        ) : null}
         <p className="mt-2 text-[11px] text-[var(--text3)]">
-          Debe restante = deuda en Leads ({formatCash(lead.debe)}) − cuotas cargadas. La tabla Leads no se
-          modifica.
+          Debe restante = deuda en Leads (
+          {lead.debe != null ? formatCash(lead.debe) : 'desconocida'}) − cuotas cargadas. Al guardar
+          un pago se actualiza el acumulado en Leads.
         </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-[var(--border)] pt-3">
+          <label className="block min-w-[160px] flex-1">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
+              Precio contrato (USD)
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formPrecioContrato}
+              onChange={(e) => setFormPrecioContrato(e.target.value)}
+              placeholder={
+                lead.precio_contrato != null ? String(lead.precio_contrato) : 'Sin registrar'
+              }
+              disabled={savingContrato}
+              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={savingContrato}
+            onClick={() => void savePrecioContrato()}
+            className="rounded-lg border border-[var(--border2)] bg-[var(--bg3)] px-3 py-2 text-[11px] font-semibold uppercase text-[var(--text2)] hover:border-[var(--text3)] disabled:opacity-40"
+          >
+            {savingContrato ? 'Guardando…' : 'Guardar contrato'}
+          </button>
+          {lead.precio_contrato != null ? (
+            <span className="text-[11px] text-[var(--text3)]">
+              Registrado: {formatCash(lead.precio_contrato)}
+            </span>
+          ) : null}
+        </div>
 
         <div className="mt-3 border-t border-[var(--border)] pt-3">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -389,6 +491,9 @@ export function CobranzaPerfilPage() {
               <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
                 Fecha
               </th>
+              <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
+                Concepto
+              </th>
               <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
                 Monto
               </th>
@@ -401,7 +506,7 @@ export function CobranzaPerfilPage() {
           <tbody>
             {pagos.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-16 text-center text-[13px] text-[var(--text3)]">
+                <td colSpan={5} className="px-4 py-16 text-center text-[13px] text-[var(--text3)]">
                   Todavía no hay cuotas. Usá «Agregar cuota» para la primera.
                 </td>
               </tr>
@@ -416,6 +521,13 @@ export function CobranzaPerfilPage() {
                   <td className="px-3 py-2.5">
                     <span className="font-mono-num text-[12px] text-[var(--text2)]">
                       {formatIsoDateToDdMmYyyy(p.fecha)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="text-[12px] text-[var(--text2)]">
+                      {(p.concepto || '').trim() || (
+                        <span className="text-[var(--text3)]">(sin concepto)</span>
+                      )}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-right">
@@ -465,22 +577,45 @@ export function CobranzaPerfilPage() {
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
+              Concepto
+            </span>
+            <select
+              value={formConcepto}
+              onChange={(e) => setFormConcepto(e.target.value)}
+              disabled={busy}
+              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+            >
+              {PAYMENT_CONCEPTOS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
               Monto (USD)
             </span>
             <input
               type="number"
               min="0"
               step="0.01"
-              max={maxCuotaPermitida(editPago) || undefined}
+              max={maxCuotaPermitida(editPago) ?? undefined}
               value={formMonto}
               onChange={(e) => setFormMonto(e.target.value)}
               disabled={busy}
               className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
-              placeholder={String(Math.round(maxCuotaPermitida(editPago)) || '')}
+              placeholder={
+                maxCuotaPermitida(editPago) != null
+                  ? String(Math.round(maxCuotaPermitida(editPago)!))
+                  : ''
+              }
               autoFocus
             />
             <span className="mt-1 block text-[11px] text-[var(--text3)]">
-              Máximo {formatCash(maxCuotaPermitida(editPago))} (sin superar la deuda)
+              {maxCuotaPermitida(editPago) != null
+                ? `Máximo ${formatCash(maxCuotaPermitida(editPago)!)} (sin superar la deuda)`
+                : 'Sin tope de deuda — contrato no registrado'}
             </span>
           </label>
           <label className="block">

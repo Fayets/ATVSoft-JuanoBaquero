@@ -1663,81 +1663,9 @@ def snapshot_lead_if_atv(lead: Lead) -> None:
 
 
 def recalc_lead_financials(uid: int, lead: Lead, payments: list[LeadPayment]) -> None:
-    lead_payments = [p for p in payments if int(p.lead_id) == int(lead.id)]
-    total = 0.0
-    for p in lead_payments:
-        meta = p.legacy_meta if isinstance(p.legacy_meta, dict) else {}
-        if meta.get("es_programado"):
-            continue
-        if meta.get("monto_cero"):
-            continue
-        total += float(p.monto or 0)
-    lead.pago = total
+    from src.services.lead_financials_service import recalc_lead_financials as _recalc
 
-    contract_prices: list[float] = []
-    conflict = False
-    cierre_prices: list[float] = []
-    for p in lead_payments:
-        meta = p.legacy_meta if isinstance(p.legacy_meta, dict) else {}
-        pc = meta.get("precio_contrato")
-        if pc is None:
-            continue
-        try:
-            val = float(pc)
-        except (TypeError, ValueError):
-            continue
-        contract_prices.append(val)
-        if (p.concepto or "") in CIERRE_NUEVO_CONCEPTOS:
-            cierre_prices.append(val)
-
-    contract: float | None = None
-    if len(cierre_prices) == 1:
-        contract = cierre_prices[0]
-    elif len(cierre_prices) > 1:
-        contract = max(cierre_prices)
-        conflict = True
-    elif contract_prices:
-        contract = max(contract_prices)
-        if len(set(contract_prices)) > 1:
-            conflict = True
-
-    if contract is not None:
-        raw_debe = contract - total
-        meta = merge_meta(getattr(lead, "legacy_meta", None), {})
-        if raw_debe < 0:
-            meta["sobrepago"] = True
-            meta["sobrepago_monto"] = abs(raw_debe)
-            lead.debe = 0.0
-        else:
-            lead.debe = raw_debe
-        if conflict:
-            meta["precio_contrato_conflicto"] = True
-        lead.legacy_meta = meta
-    else:
-        lead.debe = None
-        meta = merge_meta(getattr(lead, "legacy_meta", None), {})
-        if conflict:
-            meta["precio_contrato_conflicto"] = True
-            lead.legacy_meta = meta
-
-    valid_product = ""
-    for p in lead_payments:
-        prod = normalize_producto_norm(p.producto)
-        if prod and prod not in ("Sin especificar", "Otro"):
-            valid_product = prod
-            break
-        if prod and not valid_product:
-            valid_product = prod
-    if valid_product and not (lead.programa_ofrecido or "").strip():
-        lead.programa_ofrecido = valid_product
-
-    for p in lead_payments:
-        if (p.concepto or "") in CIERRE_NUEVO_CONCEPTOS:
-            st = (lead.status or lead.estado or "").strip()
-            if st in ("", "Pendiente", "Agendado", "agendado"):
-                lead.status = "Cerrado"
-                lead.estado = "Cerrado"
-            break
+    _recalc(uid, lead, payments)
 
 
 def ensure_db_mapping() -> None:

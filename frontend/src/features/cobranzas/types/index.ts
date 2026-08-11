@@ -1,3 +1,14 @@
+export const PAYMENT_CONCEPTOS = [
+  'PIF',
+  '1ra Cuota',
+  '2da Cuota',
+  '3ra Cuota',
+  'Fee',
+  'Otro',
+] as const
+
+export type PaymentConcepto = (typeof PAYMENT_CONCEPTOS)[number]
+
 export type CobranzaLead = {
   id: string
   nombre: string
@@ -9,9 +20,11 @@ export type CobranzaLead = {
   closer: string
   setter: string
   programa_ofrecido: string
-  /** Referencia de tabla leads (solo lectura) */
   pago: number
-  debe: number
+  /** null = deuda desconocida (sin precio de contrato) */
+  debe: number | null
+  precio_contrato?: number | null
+  debe_desconocido?: boolean
   comprobante_url?: string | null
   total_pagado_historial: number
   cantidad_pagos: number
@@ -22,6 +35,7 @@ export type LeadPayment = {
   lead_id: string
   monto: number
   fecha: string
+  concepto: string
   nota: string
   comprobante_url?: string | null
   created_at: string
@@ -32,8 +46,25 @@ export type CobranzaPerfil = {
   pagos: LeadPayment[]
 }
 
-/** Saldo pendiente en cobranzas: Debe (Leads) − cuotas del historial. No muta la tabla leads. */
-export function debeRestante(lead: Pick<CobranzaLead, 'debe' | 'total_pagado_historial'>): number {
+const CUOTA_SEQUENCE: PaymentConcepto[] = ['1ra Cuota', '2da Cuota', '3ra Cuota']
+
+/** Sugiere la cuota siguiente según historial (PIF/cierres → 2da, etc.). */
+export function suggestPaymentConcepto(pagos: Pick<LeadPayment, 'concepto'>[]): PaymentConcepto {
+  const concepts = new Set(
+    pagos.map((p) => (p.concepto || '').trim()).filter(Boolean) as PaymentConcepto[],
+  )
+  if (concepts.has('PIF')) return 'Otro'
+  for (const step of CUOTA_SEQUENCE) {
+    if (!concepts.has(step)) return step
+  }
+  return 'Otro'
+}
+
+/** Saldo pendiente cuando la deuda es conocida; null si debe es desconocido. */
+export function debeRestante(
+  lead: Pick<CobranzaLead, 'debe' | 'debe_desconocido' | 'total_pagado_historial'>,
+): number | null {
+  if (lead.debe_desconocido || lead.debe == null) return null
   const debe = Number(lead.debe) || 0
   const hist = Number(lead.total_pagado_historial) || 0
   return Math.max(0, debe - hist)

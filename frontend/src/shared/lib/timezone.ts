@@ -118,3 +118,19 @@ export function formatCallDateTime(
     minute: '2-digit',
   })
 }
+
+/** YYYY-MM-DD del día civil en la timezone IANA (para panel diario / filtros). */
+export function todayIsoInTimeZone(timeZone: string = DEFAULT_TIMEZONE): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+export function isDateBeforeToday(isoDate: string, timeZone: string = DEFAULT_TIMEZONE): boolean {
+  const day = isoDate.trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false
+  return day < todayIsoInTimeZone(timeZone)
+}

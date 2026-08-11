@@ -576,7 +576,11 @@ class ManualCallCreateRequest(BaseModel):
     hora: str = Field(
         min_length=4,
         max_length=5,
-        description="Hora Argentina HH:MM para la llamada de hoy.",
+        description="Hora local HH:MM para el día indicado en `fecha`.",
+    )
+    fecha: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD del slot call; si se omite, hoy en timezone del usuario.",
     )
     ig_handle: str | None = None
 
@@ -993,6 +997,7 @@ class LeadPaymentOut(BaseModel):
     lead_id: str
     monto: float = 0
     fecha: str
+    concepto: str = ""
     nota: str = ""
     comprobante_url: str | None = None
     created_at: str
@@ -1001,6 +1006,7 @@ class LeadPaymentOut(BaseModel):
 class LeadPaymentCreateRequest(BaseModel):
     monto: float = Field(..., gt=0)
     fecha: str | None = Field(default=None, description="YYYY-MM-DD; default hoy")
+    concepto: str = Field(default="1ra Cuota", description="PIF | 1ra Cuota | 2da Cuota | 3ra Cuota | Fee | Otro")
     nota: str | None = None
     comprobante_url: str | None = None
 
@@ -1008,12 +1014,19 @@ class LeadPaymentCreateRequest(BaseModel):
 class LeadPaymentPatchRequest(BaseModel):
     monto: float | None = Field(default=None, gt=0)
     fecha: str | None = Field(default=None, description="YYYY-MM-DD")
+    concepto: str | None = None
     nota: str | None = None
     comprobante_url: str | None = None
 
 
+class CobranzaLeadPatchRequest(BaseModel):
+    """Actualizar precio de contrato conocido (legacy_meta.precio_contrato)."""
+
+    precio_contrato: float = Field(..., gt=0)
+
+
 class CobranzaLeadOut(BaseModel):
-    """Lead deudor + resumen del historial de pagos (sin mutar Lead.pago/debe)."""
+    """Lead deudor + resumen del historial de pagos."""
 
     id: str
     nombre: str = ""
@@ -1025,11 +1038,11 @@ class CobranzaLeadOut(BaseModel):
     closer: str = ""
     setter: str = ""
     programa_ofrecido: str = ""
-    # Referencia de la tabla leads (solo lectura en cobranzas)
     pago: float = 0
-    debe: float = 0
+    debe: float | None = None
+    precio_contrato: float | None = None
+    debe_desconocido: bool = False
     comprobante_url: str | None = None
-    # Historial independiente
     total_pagado_historial: float = 0
     cantidad_pagos: int = 0
 

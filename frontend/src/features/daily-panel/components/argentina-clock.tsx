@@ -1,11 +1,11 @@
 'use client'
 
 import { memo, useEffect, useState } from 'react'
+import { useTimezone } from '@/shared/hooks/use-timezone'
 
-const AR_TZ = 'America/Argentina/Buenos_Aires'
-
-/** Reloj aislado: el tick no re-renderiza el resto del panel. */
+/** Reloj del panel: usa la timezone del tenant (header). */
 export const ArgentinaClock = memo(function ArgentinaClock({ active }: { active: boolean }) {
+  const { timeZone, option } = useTimezone()
   const [clock, setClock] = useState('')
 
   useEffect(() => {
@@ -20,15 +20,19 @@ export const ArgentinaClock = memo(function ArgentinaClock({ active }: { active:
           minute: '2-digit',
           second: '2-digit',
           hour12: false,
-          timeZone: AR_TZ,
+          timeZone,
         }).format(new Date()),
       )
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [active])
+  }, [active, timeZone])
 
   if (!clock) return null
-  return <span className="neo-panel__clock">{clock}</span>
+  return (
+    <span className="neo-panel__clock" title={`${option.label} (${timeZone})`}>
+      {clock}
+    </span>
+  )
 })

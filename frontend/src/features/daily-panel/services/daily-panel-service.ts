@@ -139,6 +139,7 @@ export async function createManualCall(input: ManualCallInput): Promise<void> {
       client_name: input.client_name.trim(),
       closer: input.closer.trim(),
       hora: input.hora.trim(),
+      fecha: input.fecha?.trim() || undefined,
       ig_handle: input.ig_handle?.trim() || null,
     }),
   })

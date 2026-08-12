@@ -998,6 +998,7 @@ class LeadPaymentOut(BaseModel):
     monto: float = 0
     fecha: str
     concepto: str = ""
+    metodo: str = ""
     nota: str = ""
     comprobante_url: str | None = None
     created_at: str
@@ -1007,6 +1008,7 @@ class LeadPaymentCreateRequest(BaseModel):
     monto: float = Field(..., gt=0)
     fecha: str | None = Field(default=None, description="YYYY-MM-DD; default hoy")
     concepto: str = Field(default="1ra Cuota", description="PIF | 1ra Cuota | 2da Cuota | 3ra Cuota | Fee | Otro")
+    metodo: str | None = Field(default=None, description="Transferencia | Otro | Link de pago | …")
     nota: str | None = None
     comprobante_url: str | None = None
 
@@ -1015,6 +1017,7 @@ class LeadPaymentPatchRequest(BaseModel):
     monto: float | None = Field(default=None, gt=0)
     fecha: str | None = Field(default=None, description="YYYY-MM-DD")
     concepto: str | None = None
+    metodo: str | None = None
     nota: str | None = None
     comprobante_url: str | None = None
 

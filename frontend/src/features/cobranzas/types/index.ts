@@ -7,7 +7,18 @@ export const PAYMENT_CONCEPTOS = [
   'Otro',
 ] as const
 
+export const PAYMENT_METODOS = [
+  'Transferencia',
+  'Otro',
+  'Link de pago',
+  'Tarjeta',
+  'PayPal',
+  'Crypto',
+  'Zelle',
+] as const
+
 export type PaymentConcepto = (typeof PAYMENT_CONCEPTOS)[number]
+export type PaymentMetodo = (typeof PAYMENT_METODOS)[number]
 
 export type CobranzaLead = {
   id: string
@@ -36,6 +47,7 @@ export type LeadPayment = {
   monto: number
   fecha: string
   concepto: string
+  metodo?: string
   nota: string
   comprobante_url?: string | null
   created_at: string

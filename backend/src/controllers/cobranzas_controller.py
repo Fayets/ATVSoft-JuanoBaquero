@@ -102,6 +102,7 @@ def _payment_out(row: LeadPayment) -> LeadPaymentOut:
         monto=float(row.monto or 0),
         fecha=_date_iso(row.fecha),
         concepto=(row.concepto or "").strip(),
+        metodo=(getattr(row, "metodo", None) or "").strip(),
         nota=row.nota or "",
         comprobante_url=(getattr(row, "comprobante_url", None) or "").strip() or None,
         created_at=_dt_iso(row.created_at),
@@ -390,6 +391,7 @@ def create_pago(
             monto=float(body.monto),
             fecha=fecha_val,
             concepto=concepto,
+            metodo=(body.metodo or "").strip(),
             nota=(body.nota or "").strip() or concepto,
             comprobante_url=(body.comprobante_url or "").strip(),
         )
@@ -435,6 +437,8 @@ def patch_pago(
             row.fecha = parsed
         if "concepto" in data and data["concepto"] is not None:
             row.concepto = _require_concepto(data["concepto"])
+        if "metodo" in data:
+            row.metodo = (data["metodo"] or "").strip()
         if "nota" in data:
             row.nota = (data["nota"] or "").strip() or (row.concepto or "Cuota")
         if "comprobante_url" in data:

@@ -14,11 +14,16 @@ import {
   CobranzaPerfil,
   LeadPayment,
   PAYMENT_CONCEPTOS,
+  PAYMENT_METODOS,
   debeRestante,
   formatIsoDateToDdMmYyyy,
   suggestPaymentConcepto,
   todayIsoLocal,
 } from '../types'
+
+function isHttpUrl(val: string): boolean {
+  return /^https?:\/\//i.test(val.trim())
+}
 
 export function CobranzaPerfilPage() {
   const params = useParams()
@@ -37,13 +42,10 @@ export function CobranzaPerfilPage() {
   const [formMonto, setFormMonto] = useState('')
   const [formFecha, setFormFecha] = useState(todayIsoLocal())
   const [formConcepto, setFormConcepto] = useState<string>('1ra Cuota')
+  const [formMetodo, setFormMetodo] = useState<string>('Transferencia')
   const [formPrecioContrato, setFormPrecioContrato] = useState('')
   const [savingContrato, setSavingContrato] = useState(false)
-  const [formFile, setFormFile] = useState<File | null>(null)
   const [formComprobanteUrl, setFormComprobanteUrl] = useState('')
-  const [formExistingUrl, setFormExistingUrl] = useState<string | null>(null)
-  const [clearComprobante, setClearComprobante] = useState(false)
-  const cuotaFileRef = useRef<HTMLInputElement>(null)
   const leadFileRef = useRef<HTMLInputElement>(null)
   const [uploadingLeadProof, setUploadingLeadProof] = useState(false)
 
@@ -102,10 +104,8 @@ export function CobranzaPerfilPage() {
     setFormMonto('')
     setFormFecha(todayIsoLocal())
     setFormConcepto(suggestPaymentConcepto(perfil.pagos))
-    setFormFile(null)
+    setFormMetodo('Transferencia')
     setFormComprobanteUrl('')
-    setFormExistingUrl(null)
-    setClearComprobante(false)
     setAddOpen(true)
   }
 
@@ -114,12 +114,10 @@ export function CobranzaPerfilPage() {
     setFormMonto(String(p.monto ?? ''))
     setFormFecha((p.fecha || '').slice(0, 10) || todayIsoLocal())
     setFormConcepto((p.concepto || '').trim() || 'Otro')
-    setFormFile(null)
+    setFormMetodo((p.metodo || '').trim() || 'Transferencia')
     setFormComprobanteUrl(
-      p.comprobante_url && /^https?:\/\//i.test(p.comprobante_url) ? p.comprobante_url : '',
+      p.comprobante_url && isHttpUrl(p.comprobante_url) ? p.comprobante_url : '',
     )
-    setFormExistingUrl(p.comprobante_url || null)
-    setClearComprobante(false)
     setAddOpen(true)
   }
 
@@ -144,35 +142,24 @@ export function CobranzaPerfilPage() {
     }
     setBusy(true)
     try {
-      let comprobante_url: string | null | undefined = undefined
-      if (formFile) {
-        comprobante_url = await uploadComprobante(formFile)
-      } else if (clearComprobante) {
-        comprobante_url = ''
-      } else {
-        const typed = formComprobanteUrl.trim()
-        if (typed) {
-          if (!/^https?:\/\//i.test(typed)) {
-            toast('El comprobante debe ser una URL http(s) válida o quedar vacío.')
-            setBusy(false)
-            return
-          }
-          comprobante_url = typed
-        } else if (editPago && formExistingUrl) {
-          comprobante_url = ''
-        } else if (!editPago) {
-          comprobante_url = null
+      const typedUrl = formComprobanteUrl.trim()
+      let comprobante_url: string | null = null
+      if (typedUrl) {
+        if (!isHttpUrl(typedUrl)) {
+          toast('El comprobante debe ser una URL http(s) válida o quedar vacío.')
+          setBusy(false)
+          return
         }
+        comprobante_url = typedUrl
       }
 
       const body: Record<string, unknown> = {
         monto,
         fecha: formFecha.trim(),
         concepto: formConcepto.trim(),
+        metodo: formMetodo.trim(),
         nota: formConcepto.trim(),
-      }
-      if (comprobante_url !== undefined) {
-        body.comprobante_url = comprobante_url
+        comprobante_url,
       }
 
       const res = editPago
@@ -553,8 +540,15 @@ export function CobranzaPerfilPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5">
-                    {p.comprobante_url ? (
-                      <ComprobanteThumb url={p.comprobante_url} compact />
+                    {p.comprobante_url && isHttpUrl(p.comprobante_url) ? (
+                      <a
+                        href={resolveMediaUrl(p.comprobante_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[12px] text-[var(--accent)] hover:underline"
+                      >
+                        ver
+                      </a>
                     ) : (
                       <span className="text-[12px] text-[var(--text3)]">—</span>
                     )}
@@ -647,75 +641,36 @@ export function CobranzaPerfilPage() {
               className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
             />
           </label>
-          <div className="block">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
+              Método
+            </span>
+            <select
+              value={formMetodo}
+              onChange={(e) => setFormMetodo(e.target.value)}
+              disabled={busy}
+              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+            >
+              {PAYMENT_METODOS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
               Comprobante
             </span>
             <input
               type="url"
               value={formComprobanteUrl}
-              onChange={(e) => {
-                setFormComprobanteUrl(e.target.value)
-                if (e.target.value.trim()) setClearComprobante(false)
-              }}
+              onChange={(e) => setFormComprobanteUrl(e.target.value)}
               disabled={busy}
-              placeholder="https://drive.google.com/… (opcional)"
-              className="mb-2 w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[12px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+              placeholder="https://... link al comprobante"
+              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
             />
-            <input
-              ref={cuotaFileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0] || null
-                e.target.value = ''
-                setFormFile(file)
-                if (file) {
-                  setClearComprobante(false)
-                  setFormComprobanteUrl('')
-                }
-              }}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => cuotaFileRef.current?.click()}
-                className="rounded-lg border border-[var(--border2)] bg-[var(--bg3)] px-3 py-1.5 text-[11px] text-[var(--text2)] hover:border-[var(--text3)] disabled:opacity-40"
-              >
-                {formFile ? 'Cambiar archivo' : 'Elegir imagen/PDF'}
-              </button>
-              {formFile ? (
-                <span className="truncate text-[11px] text-[var(--text2)]">{formFile.name}</span>
-              ) : formExistingUrl && !clearComprobante ? (
-                <a
-                  href={resolveMediaUrl(formExistingUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-[var(--accent)] hover:underline"
-                >
-                  Ver actual
-                </a>
-              ) : (
-                <span className="text-[11px] text-[var(--text3)]">Opcional</span>
-              )}
-              {(formFile || (formExistingUrl && !clearComprobante)) && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setFormFile(null)
-                    setFormComprobanteUrl('')
-                    setClearComprobante(true)
-                  }}
-                  className="text-[11px] text-[#F87171]"
-                >
-                  Quitar
-                </button>
-              )}
-            </div>
-          </div>
+          </label>
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"

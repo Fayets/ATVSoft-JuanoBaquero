@@ -483,6 +483,7 @@ class LeadOut(BaseModel):
     setter: str | None = None
     triajer: str | None = None
     triaje_hecho: bool | None = None
+    outbound: bool | None = None
     notes: str | None = None
     date: str
     month: str | None = None
@@ -562,6 +563,7 @@ class LeadPatchRequest(BaseModel):
     closer: str | None = None
     triajer: str | None = None
     triaje_hecho: bool | None = None
+    outbound: bool | None = None
     calificacion_llamada: str | None = Field(
         default=None,
         description='"" | "calificado" | "descalificado" — panel diario.',
@@ -824,7 +826,7 @@ class CrmClientOut(BaseModel):
     notes: str = ""
     progress_percent: float | None = None
     end_date: str | None = None
-    months_elapsed: int | None = None
+    days_elapsed: int | None = None
     tags: list[str] = Field(default_factory=list)
     is_complete: bool = False
     missing_fields: list[str] = Field(default_factory=list)
@@ -960,7 +962,9 @@ class AgentLlamadaHoyItemOut(BaseModel):
     lead: str
     closer: str
     triajer: str = ""
+    setter: str = ""
     triaje_hecho: bool = False
+    outbound: bool = False
     link_llamada: str
     status: str
     payment: float = 0

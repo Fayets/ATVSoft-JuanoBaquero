@@ -62,13 +62,6 @@ def parse_duration_from_text(text: str | None) -> int | None:
     return n if 1 <= n <= 120 else None
 
 
-def _months_between(start: date, end: date) -> int:
-    months = (end.year - start.year) * 12 + (end.month - start.month)
-    if end.day < start.day:
-        months -= 1
-    return max(0, months)
-
-
 def _add_months(d: date, months: int) -> date:
     y = d.year + (d.month - 1 + months) // 12
     m = (d.month - 1 + months) % 12 + 1
@@ -78,10 +71,11 @@ def _add_months(d: date, months: int) -> date:
 def compute_progress(start: date, duration_months: int, today: date | None = None) -> tuple[float, int, date]:
     duration = max(1, int(duration_months or 1))
     ref = today or date.today()
-    elapsed = _months_between(start, ref)
-    percent = min(100.0, max(0.0, round((elapsed / duration) * 100, 1)))
+    days_elapsed = max(0, (ref - start).days)
+    total_days = duration * 30
+    percent = min(100.0, max(0.0, round((days_elapsed / total_days) * 100, 1)))
     end = _add_months(start, duration)
-    return percent, elapsed, end
+    return percent, days_elapsed, end
 
 
 def normalize_sale_status(raw: str | None) -> str:
@@ -311,10 +305,10 @@ def client_to_out(lead: LeadEntity, overlay: CrmClientEntity | None, ctx: Client
 
     is_complete = len(missing) == 0
     progress: float | None = None
-    months_elapsed: int | None = None
+    days_elapsed: int | None = None
     end_date: str | None = None
     if is_complete and start is not None and duration:
-        progress, months_elapsed, end = compute_progress(start, duration)
+        progress, days_elapsed, end = compute_progress(start, duration)
         end_date = end.isoformat()
 
     field_sources = {
@@ -342,7 +336,7 @@ def client_to_out(lead: LeadEntity, overlay: CrmClientEntity | None, ctx: Client
         "notes": (overlay.notes if overlay else "") or "",
         "progress_percent": progress,
         "end_date": end_date,
-        "months_elapsed": months_elapsed,
+        "days_elapsed": days_elapsed,
         "tags": tags,
         "is_complete": is_complete,
         "missing_fields": missing,
@@ -352,11 +346,20 @@ def client_to_out(lead: LeadEntity, overlay: CrmClientEntity | None, ctx: Client
     }
 
 
+def _client_sort_key(client: dict) -> tuple:
+    progress = client.get("progress_percent")
+    name = (client.get("full_name") or "").lower()
+    if progress is None:
+        return (1, 0.0, name)
+    return (0, -float(progress), name)
+
+
 def list_clients_for_user(user_id: int) -> list[dict]:
     ctx = ClientContext(user_id)
     leads = [l for l in LeadEntity.select() if int(l.user_id) == user_id and lead_is_client(l)]
-    leads.sort(key=lambda r: ((r.nombre or "").lower(), int(r.id)))
-    return [client_to_out(lead, ctx.overlays.get(int(lead.id)), ctx) for lead in leads]
+    clients = [client_to_out(lead, ctx.overlays.get(int(lead.id)), ctx) for lead in leads]
+    clients.sort(key=_client_sort_key)
+    return clients
 
 
 def get_client_for_lead(user_id: int, lead_id: int) -> dict | None:

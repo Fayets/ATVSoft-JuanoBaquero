@@ -6,7 +6,9 @@ export type DailyCall = {
   lead: string
   closer: string
   triajer: string
+  setter: string
   triaje_hecho: boolean
+  outbound: boolean
   call_link: string
   status: string
   calificacion_llamada: '' | 'calificado' | 'descalificado'

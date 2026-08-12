@@ -191,6 +191,7 @@ class Lead(db.Entity):
     closer_norm = Optional(str, default="")
     triajer = Optional(str, default="")
     triaje_hecho = Optional(bool, default=False)
+    outbound = Optional(bool, default=False)
     dolores_setting = Optional(str, default="")
     dolores_llamada = Optional(str, default="")
     closer_report = Optional(str, default="")

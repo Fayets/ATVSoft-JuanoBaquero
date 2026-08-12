@@ -27,13 +27,16 @@ type Props = {
   items: DailyCall[]
   closerOptions: string[]
   triajerOptions: string[]
+  setterOptions: string[]
   programOptions: string[]
   defaultCloser: string
   loading: boolean
   onStatusChange: (leadId: number, status: string) => Promise<void>
   onCloserChange: (leadId: number, closer: string) => Promise<void>
   onTriajerChange: (leadId: number, triajer: string) => Promise<void>
+  onSetterChange: (leadId: number, setter: string) => Promise<void>
   onTriajeHechoChange: (leadId: number, hecho: boolean) => Promise<void>
+  onOutboundChange: (leadId: number, outbound: boolean) => Promise<void>
   onCalificacionChange: (
     leadId: number,
     calificacion: DailyCall['calificacion_llamada'],
@@ -201,6 +204,51 @@ const TriajerSelect = memo(function TriajerSelect({
   )
 })
 
+const SetterSelect = memo(function SetterSelect({
+  leadId,
+  setter,
+  options,
+  onSetterChange,
+}: {
+  leadId: number
+  setter: string
+  options: string[]
+  onSetterChange: (leadId: number, setter: string) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+  const matched = options.find((o) => o.toLowerCase() === setter.trim().toLowerCase())
+  const value = matched ?? (setter.trim() || '')
+
+  const handleChange = async (e: ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value
+    if (next === value) return
+    setSaving(true)
+    try {
+      await onSetterChange(leadId, next)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <select
+      value={value}
+      disabled={saving}
+      onChange={(e) => void handleChange(e)}
+      className="neo-calls__closer-select"
+      aria-label={`Setter de lead ${leadId}`}
+    >
+      <option value="">Sin especificar</option>
+      {value && !matched ? <option value={value}>{value}</option> : null}
+      {options.map((name) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  )
+})
+
 const TriajeCheckbox = memo(function TriajeCheckbox({
   leadId,
   hecho,
@@ -232,6 +280,41 @@ const TriajeCheckbox = memo(function TriajeCheckbox({
         aria-label={`Triaje hecho para lead ${leadId}`}
       />
       <span>{hecho ? 'Hecho' : 'Pendiente'}</span>
+    </label>
+  )
+})
+
+const OutboundCheckbox = memo(function OutboundCheckbox({
+  leadId,
+  marcado,
+  onChange,
+}: {
+  leadId: number
+  marcado: boolean
+  onChange: (leadId: number, outbound: boolean) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+
+  const toggle = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onChange(leadId, !marcado)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label className="neo-calls__triaje-check">
+      <input
+        type="checkbox"
+        checked={marcado}
+        disabled={saving}
+        onChange={() => void toggle()}
+        aria-label={`Outbound para lead ${leadId}`}
+      />
+      <span>{marcado ? 'Sí' : 'No'}</span>
     </label>
   )
 })
@@ -519,12 +602,15 @@ type RowProps = {
   row: DailyCall
   closerOptions: string[]
   triajerOptions: string[]
+  setterOptions: string[]
   programOptions: string[]
   defaultCloser: string
   onStatusChange: Props['onStatusChange']
   onCloserChange: Props['onCloserChange']
   onTriajerChange: Props['onTriajerChange']
+  onSetterChange: Props['onSetterChange']
   onTriajeHechoChange: Props['onTriajeHechoChange']
+  onOutboundChange: Props['onOutboundChange']
   onCalificacionChange: Props['onCalificacionChange']
   onFathomLinkChange: Props['onFathomLinkChange']
   onPaymentChange: Props['onPaymentChange']
@@ -537,12 +623,15 @@ const DailyCallRow = memo(function DailyCallRow({
   row,
   closerOptions,
   triajerOptions,
+  setterOptions,
   programOptions,
   defaultCloser,
   onStatusChange,
   onCloserChange,
   onTriajerChange,
+  onSetterChange,
   onTriajeHechoChange,
+  onOutboundChange,
   onCalificacionChange,
   onFathomLinkChange,
   onPaymentChange,
@@ -573,10 +662,21 @@ const DailyCallRow = memo(function DailyCallRow({
         options={triajerOptions}
         onTriajerChange={onTriajerChange}
       />
+      <SetterSelect
+        leadId={row.id}
+        setter={row.setter}
+        options={setterOptions}
+        onSetterChange={onSetterChange}
+      />
       <TriajeCheckbox
         leadId={row.id}
         hecho={row.triaje_hecho}
         onChange={onTriajeHechoChange}
+      />
+      <OutboundCheckbox
+        leadId={row.id}
+        marcado={row.outbound}
+        onChange={onOutboundChange}
       />
       <FathomLinkCell leadId={row.id} value={row.call_link} onSave={onFathomLinkChange} />
       <StatusSelect leadId={row.id} status={row.status} onStatusChange={onStatusChange} />
@@ -609,13 +709,16 @@ export const DailyCallsTable = memo(function DailyCallsTable({
   items,
   closerOptions,
   triajerOptions,
+  setterOptions,
   programOptions,
   defaultCloser,
   loading,
   onStatusChange,
   onCloserChange,
   onTriajerChange,
+  onSetterChange,
   onTriajeHechoChange,
+  onOutboundChange,
   onCalificacionChange,
   onFathomLinkChange,
   onPaymentChange,
@@ -679,7 +782,9 @@ export const DailyCallsTable = memo(function DailyCallsTable({
         <div>Lead</div>
         <div>Closer</div>
         <div>Triajer</div>
+        <div>Setter</div>
         <div>Triaje</div>
+        <div>Outbound</div>
         <div>Link Fathom</div>
         <div>Status</div>
         <div>Calif. / Desc.</div>
@@ -694,12 +799,15 @@ export const DailyCallsTable = memo(function DailyCallsTable({
           row={row}
           closerOptions={closerSelectOptions}
           triajerOptions={triajerOptions}
+          setterOptions={setterOptions}
           programOptions={programOptions}
           defaultCloser={defaultCloser}
           onStatusChange={onStatusChange}
           onCloserChange={onCloserChange}
           onTriajerChange={onTriajerChange}
+          onSetterChange={onSetterChange}
           onTriajeHechoChange={onTriajeHechoChange}
+          onOutboundChange={onOutboundChange}
           onCalificacionChange={onCalificacionChange}
           onFathomLinkChange={onFathomLinkChange}
           onPaymentChange={onPaymentChange}

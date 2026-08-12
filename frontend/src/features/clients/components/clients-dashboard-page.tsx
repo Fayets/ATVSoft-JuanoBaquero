@@ -33,6 +33,10 @@ function textToWins(text: string) {
   return text.split('\n').map((l) => l.trim()).filter(Boolean)
 }
 
+function formatDaysElapsed(days: number): string {
+  return days === 1 ? '1 día transcurrido' : `${days} días transcurridos`
+}
+
 function ProgressBar({ value }: { value: number | null }) {
   if (value == null) {
     return <span className="text-[11px] text-[var(--text3)]">Sin datos</span>
@@ -88,7 +92,7 @@ export function ClientsDashboardPage() {
     notes: '',
     progress_percent: null,
     end_date: null,
-    months_elapsed: null,
+    days_elapsed: null,
     tags: [],
     is_complete: false,
     missing_fields: [],
@@ -274,8 +278,10 @@ export function ClientsDashboardPage() {
                         {sourceLabel(item.field_sources.program_duration_months)}
                       </div>
                     )}
-                    {item.months_elapsed != null && (
-                      <div className="text-[11px] text-[var(--text3)]">{item.months_elapsed} transcurridos</div>
+                    {item.days_elapsed != null && (
+                      <div className="text-[11px] text-[var(--text3)]">
+                        {formatDaysElapsed(item.days_elapsed)}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3">

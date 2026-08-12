@@ -1,0 +1,112 @@
+{
+  "ok": true,
+  "steps": [
+    {
+      "step": "sql_inicial",
+      "detail": {
+        "top_setters": [
+          [
+            "(sin setter)",
+            2656
+          ],
+          [
+            "Setter IA",
+            146
+          ]
+        ],
+        "team_setters": [],
+        "pagos": [
+          393,
+          "291232.87"
+        ]
+      }
+    },
+    {
+      "step": "get_llamadas_hoy",
+      "detail": {
+        "lead_id": 6991,
+        "setter": ""
+      }
+    },
+    {
+      "step": "create_team_setter",
+      "detail": {
+        "id": 16,
+        "nombre": "__Test Setter QA__",
+        "rol": "setter",
+        "activo": true
+      }
+    },
+    {
+      "step": "team_members_setters",
+      "detail": [
+        "__Test Setter QA__"
+      ]
+    },
+    {
+      "step": "patch_setter",
+      "detail": {
+        "lead_id": 6991,
+        "setter": "__Test Setter QA__"
+      }
+    },
+    {
+      "step": "get_tras_asignar",
+      "detail": {
+        "setter": "__Test Setter QA__"
+      }
+    },
+    {
+      "step": "patch_sin_especificar",
+      "detail": {
+        "setter": null
+      }
+    },
+    {
+      "step": "setter_ia_huérfano",
+      "detail": "No hay lead con Setter IA en el día de prueba"
+    },
+    {
+      "step": "estado_restaurado",
+      "detail": {
+        "lead_id": 6991,
+        "setter": ""
+      }
+    },
+    {
+      "step": "sql_final",
+      "detail": {
+        "top_setters": [
+          [
+            "(sin setter)",
+            2656
+          ],
+          [
+            "Setter IA",
+            146
+          ]
+        ],
+        "team_setters": [
+          [
+            16,
+            "__Test Setter QA__",
+            "setter"
+          ]
+        ],
+        "pagos": [
+          393,
+          "291232.87"
+        ]
+      }
+    },
+    {
+      "step": "resultado",
+      "detail": "TODAS LAS PRUEBAS OK"
+    },
+    {
+      "step": "cleanup_test_setter",
+      "detail": 16
+    }
+  ],
+  "errors": []
+}

@@ -18,12 +18,15 @@ import {
   getProgramOptions,
   getTeamClosers,
   getTeamTriajers,
+  getTeamSetters,
   assignTriajersForDay,
   patchLeadCalificacion,
   patchLeadCallLink,
   patchLeadCloser,
   patchLeadTriajer,
+  patchLeadSetter,
   patchLeadTriajeHecho,
+  patchLeadOutbound,
   patchLeadOwed,
   patchLeadPayment,
   patchLeadProgramOffered,
@@ -77,6 +80,7 @@ export function DailyPanelPage({
   const [calls, setCalls] = useState<DailyCall[]>([])
   const [closerOptions, setCloserOptions] = useState<string[]>([])
   const [triajerOptions, setTriajerOptions] = useState<string[]>([])
+  const [setterOptions, setSetterOptions] = useState<string[]>([])
   const [programOptions, setProgramOptions] = useState<string[]>([''])
   const [defaultCloser, setDefaultCloser] = useState(DEFAULT_DAILY_CLOSER)
   const [loading, setLoading] = useState(true)
@@ -102,14 +106,16 @@ export function DailyPanelPage({
     let cancelled = false
     ;(async () => {
       try {
-        const [closers, triajers] = await Promise.all([
+        const [closers, triajers, setters] = await Promise.all([
           getTeamClosers().catch(() => [] as string[]),
           getTeamTriajers().catch(() => [] as string[]),
+          getTeamSetters().catch(() => [] as string[]),
         ])
         if (cancelled) return
         const resolvedDefault = resolveDefaultCloser(closers)
         setCloserOptions(closers)
         setTriajerOptions(triajers)
+        setSetterOptions(setters)
         setDefaultCloser(resolvedDefault)
         setManualCloser((prev) => prev || resolvedDefault)
         setMetaReady(true)
@@ -117,6 +123,7 @@ export function DailyPanelPage({
         if (!cancelled) {
           setCloserOptions([])
           setTriajerOptions([])
+          setSetterOptions([])
           setDefaultCloser('')
           setMetaReady(true)
         }
@@ -226,6 +233,21 @@ export function DailyPanelPage({
     [toast],
   )
 
+  const handleSetterChange = useCallback(
+    async (leadId: number, setter: string) => {
+      try {
+        await patchLeadSetter(leadId, setter)
+        setCalls((prev) =>
+          prev.map((c) => (c.id === leadId ? { ...c, setter } : c)),
+        )
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo guardar el setter.')
+        throw e
+      }
+    },
+    [toast],
+  )
+
   const handleTriajeHechoChange = useCallback(
     async (leadId: number, hecho: boolean) => {
       try {
@@ -235,6 +257,21 @@ export function DailyPanelPage({
         )
       } catch (e) {
         toast(e instanceof Error ? e.message : 'No se pudo guardar el triaje.')
+        throw e
+      }
+    },
+    [toast],
+  )
+
+  const handleOutboundChange = useCallback(
+    async (leadId: number, outbound: boolean) => {
+      try {
+        await patchLeadOutbound(leadId, outbound)
+        setCalls((prev) =>
+          prev.map((c) => (c.id === leadId ? { ...c, outbound } : c)),
+        )
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo guardar outbound.')
         throw e
       }
     },
@@ -725,13 +762,16 @@ export function DailyPanelPage({
           items={filteredCalls}
           closerOptions={closerOptions}
           triajerOptions={triajerOptions}
+          setterOptions={setterOptions}
           programOptions={programOptions}
           defaultCloser={defaultCloser}
           loading={loading}
           onStatusChange={handleStatusChange}
           onCloserChange={handleCloserChange}
           onTriajerChange={handleTriajerChange}
+          onSetterChange={handleSetterChange}
           onTriajeHechoChange={handleTriajeHechoChange}
+          onOutboundChange={handleOutboundChange}
           onCalificacionChange={handleCalificacionChange}
           onFathomLinkChange={handleFathomLinkChange}
           onPaymentChange={handlePaymentChange}

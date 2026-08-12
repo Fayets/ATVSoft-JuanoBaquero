@@ -1599,6 +1599,13 @@ def _migrate_postgres_lead_triajer() -> None:
                 )
             except Exception:
                 pass
+            try:
+                cur.execute(
+                    f"ALTER TABLE {sql_table} ADD COLUMN IF NOT EXISTS "
+                    f"outbound BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            except Exception:
+                pass
     finally:
         conn.close()
 

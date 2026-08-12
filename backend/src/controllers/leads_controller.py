@@ -264,6 +264,7 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         setter=(row.setter or "").strip() or None,
         triajer=(getattr(row, "triajer", None) or "").strip() or None,
         triaje_hecho=bool(getattr(row, "triaje_hecho", False)),
+        outbound=bool(getattr(row, "outbound", False)),
         notes=row.notas,
         date=date_s,
         month=month_s,
@@ -648,6 +649,8 @@ def patch_lead(
             row.triajer = (str(data["triajer"]).strip() if data["triajer"] is not None else "") or ""
         if "triaje_hecho" in data:
             row.triaje_hecho = bool(data["triaje_hecho"])
+        if "outbound" in data:
+            row.outbound = bool(data["outbound"])
         if "calificacion_llamada" in data:
             row.calificacion_llamada = _normalize_calificacion_llamada(data["calificacion_llamada"])
 

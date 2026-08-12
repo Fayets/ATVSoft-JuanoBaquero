@@ -19,9 +19,9 @@
   --neo-mono: var(--font-mono), 'JetBrains Mono', 'SF Mono', monospace;
   --neo-col-gap: 1rem;
   --neo-cols:
-    3.25rem minmax(5rem, 0.95fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr) minmax(4.75rem, 0.7fr)
-    minmax(4.5rem, 0.75fr) minmax(6.25rem, 0.85fr) minmax(6.5rem, 0.8fr) minmax(5.75rem, 0.8fr)
-    minmax(5.75rem, 0.8fr) minmax(4.25rem, 0.6fr) minmax(4.25rem, 0.6fr);
+    3.25rem minmax(5rem, 0.95fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr)
+    minmax(4.75rem, 0.7fr) minmax(4.75rem, 0.7fr) minmax(4.5rem, 0.75fr) minmax(6.25rem, 0.85fr) minmax(6.5rem, 0.8fr)
+    minmax(5.75rem, 0.8fr) minmax(5.75rem, 0.8fr) minmax(4.25rem, 0.6fr) minmax(4.25rem, 0.6fr);
 
   position: relative;
   margin: -1rem;

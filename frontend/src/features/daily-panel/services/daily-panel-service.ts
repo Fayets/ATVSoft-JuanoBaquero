@@ -9,7 +9,9 @@ type ApiDailyCallRow = {
   lead: string
   closer?: string
   triajer?: string
+  setter?: string
   triaje_hecho?: boolean
+  outbound?: boolean
   link_llamada?: string
   call_link?: string
   status: string
@@ -54,6 +56,22 @@ export async function getTeamTriajers(): Promise<string[]> {
   const active = (m: { nombre: string; activo?: boolean }) =>
     m.activo !== false && String(m.nombre || '').trim()
   return [...new Set((data.triajers ?? []).filter(active).map((m) => m.nombre.trim()))].sort((a, b) =>
+    a.localeCompare(b, 'es'),
+  )
+}
+
+export async function getTeamSetters(): Promise<string[]> {
+  const res = await apiFetch('/team/members')
+  const data = (await res.json().catch(() => ({}))) as {
+    setters?: { nombre: string; activo?: boolean }[]
+    detail?: string
+  }
+  if (!res.ok) {
+    throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudieron cargar los setters.')
+  }
+  const active = (m: { nombre: string; activo?: boolean }) =>
+    m.activo !== false && String(m.nombre || '').trim()
+  return [...new Set((data.setters ?? []).filter(active).map((m) => m.nombre.trim()))].sort((a, b) =>
     a.localeCompare(b, 'es'),
   )
 }
@@ -110,7 +128,9 @@ export async function getDailyCalls(
       lead: row.lead,
       closer: effective,
       triajer: (row.triajer || '').trim(),
+      setter: (row.setter || '').trim(),
       triaje_hecho: Boolean(row.triaje_hecho),
+      outbound: Boolean(row.outbound),
       call_link: row.link_llamada || row.call_link || '',
       status: row.status,
       calificacion_llamada: normalizeCalificacion(row.calificacion_llamada),
@@ -220,6 +240,22 @@ export async function patchLeadTriajer(leadId: number, triajer: string): Promise
   }
 }
 
+export async function patchLeadSetter(leadId: number, setter: string): Promise<void> {
+  const res = await apiFetch(`/leads/${encodeURIComponent(String(leadId))}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ setter: setter.trim() }),
+  })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail =
+      typeof raw === 'object' && raw && 'detail' in raw
+        ? String((raw as { detail: unknown }).detail)
+        : 'No se pudo actualizar el setter.'
+    throw new Error(detail)
+  }
+}
+
 export async function patchLeadTriajeHecho(leadId: number, triajeHecho: boolean): Promise<void> {
   const res = await apiFetch(`/leads/${encodeURIComponent(String(leadId))}`, {
     method: 'PATCH',
@@ -232,6 +268,22 @@ export async function patchLeadTriajeHecho(leadId: number, triajeHecho: boolean)
       typeof raw === 'object' && raw && 'detail' in raw
         ? String((raw as { detail: unknown }).detail)
         : 'No se pudo actualizar el triaje.'
+    throw new Error(detail)
+  }
+}
+
+export async function patchLeadOutbound(leadId: number, outbound: boolean): Promise<void> {
+  const res = await apiFetch(`/leads/${encodeURIComponent(String(leadId))}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ outbound }),
+  })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail =
+      typeof raw === 'object' && raw && 'detail' in raw
+        ? String((raw as { detail: unknown }).detail)
+        : 'No se pudo actualizar outbound.'
     throw new Error(detail)
   }
 }

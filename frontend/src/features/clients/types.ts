@@ -11,7 +11,7 @@ export type CrmClient = {
   notes: string
   progress_percent: number | null
   end_date: string | null
-  months_elapsed: number | null
+  days_elapsed: number | null
   tags: string[]
   is_complete: boolean
   missing_fields: string[]

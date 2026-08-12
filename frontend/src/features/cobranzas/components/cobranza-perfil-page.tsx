@@ -25,6 +25,9 @@ function isHttpUrl(val: string): boolean {
   return /^https?:\/\//i.test(val.trim())
 }
 
+/** Oculto hasta vista "Registro de pagos" — reponer en true para mostrar de nuevo. */
+const SHOW_COMPROBANTES_EN_COBRANZAS = false
+
 export function CobranzaPerfilPage() {
   const params = useParams()
   const leadId = String(params?.leadId ?? '')
@@ -142,24 +145,26 @@ export function CobranzaPerfilPage() {
     }
     setBusy(true)
     try {
-      const typedUrl = formComprobanteUrl.trim()
-      let comprobante_url: string | null = null
-      if (typedUrl) {
-        if (!isHttpUrl(typedUrl)) {
-          toast('El comprobante debe ser una URL http(s) válida o quedar vacío.')
-          setBusy(false)
-          return
-        }
-        comprobante_url = typedUrl
-      }
-
       const body: Record<string, unknown> = {
         monto,
         fecha: formFecha.trim(),
         concepto: formConcepto.trim(),
         metodo: formMetodo.trim(),
         nota: formConcepto.trim(),
-        comprobante_url,
+      }
+
+      if (SHOW_COMPROBANTES_EN_COBRANZAS) {
+        const typedUrl = formComprobanteUrl.trim()
+        if (typedUrl) {
+          if (!isHttpUrl(typedUrl)) {
+            toast('El comprobante debe ser una URL http(s) válida o quedar vacío.')
+            setBusy(false)
+            return
+          }
+          body.comprobante_url = typedUrl
+        } else {
+          body.comprobante_url = null
+        }
       }
 
       const res = editPago
@@ -431,6 +436,7 @@ export function CobranzaPerfilPage() {
           ) : null}
         </div>
 
+        {SHOW_COMPROBANTES_EN_COBRANZAS ? (
         <div className="mt-3 border-t border-[var(--border)] pt-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
@@ -476,6 +482,7 @@ export function CobranzaPerfilPage() {
             ) : null}
           </div>
         </div>
+        ) : null}
       </div>
 
       {/* Historial */}
@@ -501,16 +508,21 @@ export function CobranzaPerfilPage() {
               <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
                 Monto
               </th>
-              <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
-                Comprobante
-              </th>
+              {SHOW_COMPROBANTES_EN_COBRANZAS ? (
+                <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]">
+                  Comprobante
+                </th>
+              ) : null}
               <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-[var(--text3)]" />
             </tr>
           </thead>
           <tbody>
             {pagos.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-16 text-center text-[13px] text-[var(--text3)]">
+                <td
+                  colSpan={SHOW_COMPROBANTES_EN_COBRANZAS ? 5 : 4}
+                  className="px-4 py-16 text-center text-[13px] text-[var(--text3)]"
+                >
                   Todavía no hay cuotas. Usá «Agregar cuota» para la primera.
                 </td>
               </tr>
@@ -539,20 +551,22 @@ export function CobranzaPerfilPage() {
                       {formatCash(p.monto)}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5">
-                    {p.comprobante_url && isHttpUrl(p.comprobante_url) ? (
-                      <a
-                        href={resolveMediaUrl(p.comprobante_url)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[12px] text-[var(--accent)] hover:underline"
-                      >
-                        ver
-                      </a>
-                    ) : (
-                      <span className="text-[12px] text-[var(--text3)]">—</span>
-                    )}
-                  </td>
+                  {SHOW_COMPROBANTES_EN_COBRANZAS ? (
+                    <td className="px-3 py-2.5">
+                      {p.comprobante_url && isHttpUrl(p.comprobante_url) ? (
+                        <a
+                          href={resolveMediaUrl(p.comprobante_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[12px] text-[var(--accent)] hover:underline"
+                        >
+                          ver
+                        </a>
+                      ) : (
+                        <span className="text-[12px] text-[var(--text3)]">—</span>
+                      )}
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex justify-end gap-1">
                       <button
@@ -658,19 +672,21 @@ export function CobranzaPerfilPage() {
               ))}
             </select>
           </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
-              Comprobante
-            </span>
-            <input
-              type="url"
-              value={formComprobanteUrl}
-              onChange={(e) => setFormComprobanteUrl(e.target.value)}
-              disabled={busy}
-              placeholder="https://... link al comprobante"
-              className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
-            />
-          </label>
+          {SHOW_COMPROBANTES_EN_COBRANZAS ? (
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text3)]">
+                Comprobante
+              </span>
+              <input
+                type="url"
+                value={formComprobanteUrl}
+                onChange={(e) => setFormComprobanteUrl(e.target.value)}
+                disabled={busy}
+                placeholder="https://... link al comprobante"
+                className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+              />
+            </label>
+          ) : null}
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"

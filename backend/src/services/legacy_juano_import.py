@@ -32,7 +32,9 @@ NEVER_TOUCH_FIELDS = frozenset({"status", "estado", "closer", "setter", "notas"}
 CLOSER_ALIASES: dict[str, str] = {
     "catalina": "Catalina Zarlenga",
     "ignacio": "Ignacio Claveria",
-    "matias": "Matías Sandobal",
+    "matias": "Matias Sandobal",
+    "matias sandobal": "Matias Sandobal",
+    "agus olivero": "Agustín Olivero",
 }
 
 TEST_NAMES = frozenset(

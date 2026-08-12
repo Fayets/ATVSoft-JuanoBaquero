@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 from collections.abc import Iterator
-from datetime import date, datetime, time as dt_time, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from src.lead_formulario import extract_formulario_from_ghl_body, merge_formulario
 from src.models import ApiConnection, Lead
+from src.services.legacy_juano_import import normalize_closer
 from src.services.triajer_service import pick_next_triajer
 
 router = APIRouter(prefix="/ghl", tags=["ghl"], redirect_slashes=False)
@@ -33,6 +34,16 @@ _GHL_SYNC_LOCK = threading.Lock()
 class GHLSyncRequest(BaseModel):
     month: str | None = Field(default=None, description="YYYY-MM opcional para filtrar appointments")
     fecha: str | None = Field(default=None, description="YYYY-MM-DD: sync solo ese día (prioridad sobre month)")
+
+
+class GHLRefrescarClosersOut(BaseModel):
+    revisadas: int
+    actualizadas: int
+    sin_cambio: int
+    api_error: int
+    detalle: list[dict[str, Any]]
+    desde: str
+    hasta: str
 
 
 def require_user_id(
@@ -517,7 +528,7 @@ def _apply_appointment_to_lead(
     """
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
     appt_id = (ghl_appointment_id or "").strip()
-    closer_name = (closer or "").strip()
+    closer_name = normalize_closer((closer or "").strip()) if (closer or "").strip() else ""
     contact_marker = f"GHL contact_id: {ghl_contact_id}" if ghl_contact_id else ""
 
     row: Lead | None = None
@@ -566,6 +577,7 @@ def _apply_appointment_to_lead(
             row.ig = ig
         if closer_name:
             row.closer = closer_name
+            row.closer_norm = closer_name
         if not (getattr(row, "triajer", None) or "").strip():
             assigned = pick_next_triajer(user_id)
             if assigned:
@@ -603,6 +615,7 @@ def _apply_appointment_to_lead(
         ghl_appointment_id=appt_id or None,
         ghl_contact_id=ghl_contact_id or None,
         closer=closer_name,
+        closer_norm=closer_name or "",
         triajer=pick_next_triajer(user_id),
         triaje_hecho=False,
         notas="\n".join(notas_parts),
@@ -738,6 +751,56 @@ def _run_ghl_sync(
         if acquire_lock:
             _GHL_SYNC_LOCK.release()
     return {"created": created, "updated": updated}
+
+
+@router.post("/refrescar-closers", response_model=GHLRefrescarClosersOut)
+def refrescar_closers_endpoint(
+    user_id: Annotated[str, Depends(require_user_id)],
+    desde: str | None = Query(default=None, description="YYYY-MM-DD inicio (default: hoy-6)"),
+    hasta: str | None = Query(default=None, description="YYYY-MM-DD fin (default: hoy)"),
+) -> GHLRefrescarClosersOut:
+    """Actualiza solo closer/closer_norm desde GHL para leads con ghl_appointment_id."""
+    uid = _uid_int(user_id)
+    today = datetime.now(_GHL_NAIVE_TZ).date()
+    end = _parse_fecha(hasta) if hasta else today
+    start = _parse_fecha(desde) if desde else (end - timedelta(days=6))
+
+    with db_session:
+        try:
+            conn = ApiConnection.get(user_id=uid, platform="ghl")
+        except ObjectNotFound:
+            raise HTTPException(status_code=400, detail="No hay conexión GHL.")
+        creds = conn.credentials if isinstance(conn.credentials, dict) else {}
+        token = str(creds.get("access_token") or "").strip()
+        location_id = str(creds.get("location_id") or "").strip()
+        calendar_id = str(creds.get("calendar_id") or "").strip()
+        if not token or not location_id or not calendar_id:
+            raise HTTPException(status_code=400, detail="Faltan credenciales GHL.")
+
+    try:
+        from src.services.ghl_refrescar_closers_service import refrescar_closers_from_ghl
+
+        result = refrescar_closers_from_ghl(
+            uid,
+            token,
+            location_id,
+            calendar_id,
+            desde=start,
+            hasta=end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[ghl] refrescar-closers ERROR: {exc}", flush=True)
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"Error al refrescar closers: {exc}") from exc
+
+    print(
+        f"[ghl] refrescar-closers user={uid} "
+        f"revisadas={result['revisadas']} actualizadas={result['actualizadas']}",
+        flush=True,
+    )
+    return GHLRefrescarClosersOut(**result)
 
 
 @db_session

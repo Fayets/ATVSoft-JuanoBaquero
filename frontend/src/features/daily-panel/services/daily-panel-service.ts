@@ -403,3 +403,39 @@ export async function syncGhlForDay(fecha: string): Promise<{ created: number; u
     updated: Number(raw.updated) || 0,
   }
 }
+
+export type RefrescarClosersResult = {
+  revisadas: number
+  actualizadas: number
+  sin_cambio: number
+  api_error: number
+  detalle: Array<{
+    lead_id: number
+    nombre: string
+    antes: string
+    despues: string
+  }>
+  desde: string
+  hasta: string
+}
+
+/** Refresca closer/closer_norm desde GHL (solo leads con ghl_appointment_id). */
+export async function refrescarClosersFromGhl(
+  desde?: string,
+  hasta?: string,
+): Promise<RefrescarClosersResult> {
+  const q = new URLSearchParams()
+  if (desde) q.set('desde', desde)
+  if (hasta) q.set('hasta', hasta)
+  const suffix = q.toString() ? `?${q}` : ''
+  const res = await apiFetch(`/ghl/refrescar-closers${suffix}`, { method: 'POST' })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail =
+      typeof raw === 'object' && raw && 'detail' in raw
+        ? String((raw as { detail: unknown }).detail)
+        : 'No se pudieron refrescar los closers desde GHL.'
+    throw new Error(detail)
+  }
+  return raw as RefrescarClosersResult
+}

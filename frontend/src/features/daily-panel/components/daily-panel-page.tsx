@@ -32,6 +32,7 @@ import {
   resolveDefaultCloser,
   buildCloserOptions,
   syncGhlForDay,
+  refrescarClosersFromGhl,
 } from '../services/daily-panel-service'
 import {
   createAdminManualCall,
@@ -87,6 +88,7 @@ export function DailyPanelPage({
   const [manualSaving, setManualSaving] = useState(false)
   const [generatingReport, setGeneratingReport] = useState(false)
   const [assigningTriajers, setAssigningTriajers] = useState(false)
+  const [refreshingClosers, setRefreshingClosers] = useState(false)
   /** '' = todos; '__empty__' = sin closer asignado */
   const [closerFilter, setCloserFilter] = useState('')
   const [nameSearch, setNameSearch] = useState('')
@@ -455,6 +457,39 @@ export function DailyPanelPage({
     todayIso,
   ])
 
+  const handleRefreshClosers = useCallback(async () => {
+    if (!ready || !userId || !metaReady) return
+    const endDay = selectedDate || todayIso
+    const startDay = addDaysIso(endDay, -6)
+    const rangeLabel = `${formatIsoDateDdMmYyyy(startDay)} – ${formatIsoDateDdMmYyyy(endDay)}`
+    const ok = window.confirm(
+      `Esto actualiza el closer de las llamadas (${rangeLabel}) según lo que figura en Go High Level.\n\nSi corregiste algún closer manualmente en ATV, se va a reemplazar por el de GHL.\n\n¿Continuar?`,
+    )
+    if (!ok) return
+    setRefreshingClosers(true)
+    try {
+      const result = await refrescarClosersFromGhl(startDay, endDay)
+      await fetchCalls(true)
+      const summary =
+        result.actualizadas === 0
+          ? `${result.revisadas} citas revisadas, sin cambios.`
+          : `${result.actualizadas} closers actualizados de ${result.revisadas} citas revisadas.`
+      toast(summary)
+      if (result.detalle.length > 0) {
+        const lines = result.detalle
+          .slice(0, 8)
+          .map((d) => `${d.nombre}: ${d.antes || '(vacío)'} → ${d.despues}`)
+        const extra =
+          result.detalle.length > 8 ? `\n… y ${result.detalle.length - 8} más` : ''
+        window.alert(`Closers actualizados:\n\n${lines.join('\n')}${extra}`)
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudieron refrescar los closers.')
+    } finally {
+      setRefreshingClosers(false)
+    }
+  }, [ready, userId, metaReady, selectedDate, todayIso, toast, fetchCalls])
+
   const handleAssignTriajers = useCallback(async () => {
     const day = selectedDate || todayIso
     const missing = calls.filter((c) => !(c.triajer || '').trim()).length
@@ -629,6 +664,15 @@ export function DailyPanelPage({
             title="Asigna triajer a todas las llamadas del día que aún no tienen uno"
           >
             {assigningTriajers ? 'Asignando…' : 'Asignar triajers'}
+          </button>
+          <button
+            type="button"
+            disabled={loading || refreshingClosers}
+            onClick={() => void handleRefreshClosers()}
+            className="neo-panel__btn neo-panel__btn--ghost"
+            title="Actualiza el closer desde GHL (últimos 7 días respecto al día seleccionado). Reemplaza correcciones manuales en ATV."
+          >
+            {refreshingClosers ? 'Refrescando…' : 'Refrescar closers'}
           </button>
           <button
             type="button"

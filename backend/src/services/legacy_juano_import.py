@@ -170,6 +170,8 @@ class ImportStats:
     pagos_new_contact: int = 0
     atv_leads_by_period: dict[str, int] = field(default_factory=dict)
     flags: dict[str, int] = field(default_factory=dict)
+    link_llamada_skipped_non_url: int = 0
+    link_llamada_skipped_non_url_items: list[dict[str, Any]] = field(default_factory=list)
     logs: list[ImportLogEntry] = field(default_factory=list)
 
     def log(self, table: str, legacy_id: str, action: str, detail: str = "") -> None:
@@ -931,6 +933,33 @@ def _csv_nonempty(val: object) -> bool:
     return s.casefold() not in NULL_MARKERS
 
 
+def _is_link_llamada_url(val: str) -> bool:
+    return (val or "").strip().lower().startswith(("http://", "https://"))
+
+
+def _record_link_llamada_non_url_skip(
+    stats: ImportStats,
+    *,
+    legacy_id: str,
+    lead_id: int | None,
+    valor: str,
+) -> None:
+    stats.link_llamada_skipped_non_url += 1
+    stats.link_llamada_skipped_non_url_items.append(
+        {
+            "legacy_id": legacy_id,
+            "lead_id": lead_id,
+            "valor": (valor or "").strip()[:200],
+        }
+    )
+    stats.log(
+        "lead",
+        legacy_id,
+        "link_llamada_skip_non_url",
+        f"lead_id={lead_id} valor={(valor or '').strip()[:80]!r}",
+    )
+
+
 def _append_lead_update_audit(meta: dict[str, Any], campo: str, antes: Any, despues: Any) -> None:
     actualizaciones = meta.get("actualizaciones")
     if not isinstance(actualizaciones, list):
@@ -1106,6 +1135,23 @@ def propagate_lead_from_csv(
                 meta = dict(lead.legacy_meta) if isinstance(lead.legacy_meta, dict) else {}
                 meta["situacion_orig"] = csv_situacion
                 lead.legacy_meta = meta
+
+    if origin_changed("link_llamada"):
+        csv_link = (row.get("link_llamada") or "").strip()
+        old_link = (lead.link_llamada or "").strip()
+        if _csv_nonempty(csv_link) and not old_link:
+            if not _is_link_llamada_url(csv_link):
+                _record_link_llamada_non_url_skip(
+                    stats,
+                    legacy_id=(row.get("id") or "").strip(),
+                    lead_id=int(lead.id) if lead.id else None,
+                    valor=csv_link,
+                )
+            else:
+                updated.append("link_llamada")
+                _record_lead_field_update(stats, lead, "link_llamada", old_link, csv_link, dry_run=dry_run)
+                if not dry_run:
+                    lead.link_llamada = csv_link
 
     if updated and not dry_run:
         flush()
@@ -1463,7 +1509,13 @@ def resolve_lead_from_csv(
     return LeadMatchResult(None, "nuevo", 0.0)
 
 
-def merge_lead_from_csv(lead: Lead, row: dict[str, str], meta: dict[str, Any], match: LeadMatchResult) -> None:
+def merge_lead_from_csv(
+    lead: Lead,
+    row: dict[str, str],
+    meta: dict[str, Any],
+    match: LeadMatchResult,
+    stats: ImportStats | None = None,
+) -> None:
     snapshot_lead_if_atv(lead)
     meta_patch = dict(meta)
     meta_patch["match_method"] = match.method
@@ -1496,6 +1548,18 @@ def merge_lead_from_csv(lead: Lead, row: dict[str, str], meta: dict[str, Any], m
             new_val = fill_map.get(field, "")
             if not cur and new_val:
                 setattr(lead, field, new_val)
+
+    csv_link = (row.get("link_llamada") or "").strip()
+    if csv_link and not (lead.link_llamada or "").strip():
+        if _is_link_llamada_url(csv_link):
+            lead.link_llamada = csv_link
+        elif stats is not None:
+            _record_link_llamada_non_url_skip(
+                stats,
+                legacy_id=(row.get("id") or "").strip(),
+                lead_id=int(lead.id) if lead.id else None,
+                valor=csv_link,
+            )
 
 
 @dataclass
@@ -1927,7 +1991,7 @@ class LegacyJuanoImporter:
                 self.stats.leads_inserted += 1
                 self.stats.log("lead", legacy_id, "dry_run_merge", f"lead_id={match.lead.id} {match.method}")
             else:
-                merge_lead_from_csv(match.lead, plan.row, plan.meta, match)
+                merge_lead_from_csv(match.lead, plan.row, plan.meta, match, self.stats)
                 self.stats.leads_inserted += 1
             self._write_lead_ref(
                 legacy_id=legacy_id,
@@ -1998,6 +2062,17 @@ class LegacyJuanoImporter:
         ghl = (plan.row.get("ghl_contact_id") or "").strip()
         if ghl:
             lead_kwargs["ghl_contact_id"] = ghl
+        link_llamada = (plan.row.get("link_llamada") or "").strip()
+        if link_llamada:
+            if _is_link_llamada_url(link_llamada):
+                lead_kwargs["link_llamada"] = link_llamada
+            else:
+                _record_link_llamada_non_url_skip(
+                    self.stats,
+                    legacy_id=legacy_id,
+                    lead_id=None,
+                    valor=link_llamada,
+                )
         lead = Lead(**lead_kwargs)
         flush()
         assert self._index is not None
@@ -2438,6 +2513,10 @@ def write_import_summary(
                 "payload_refreshed": stats.leads_payload_refreshed,
                 "propagated": stats.leads_propagated,
                 "updates_by_field": stats.lead_updates_by_field,
+                "link_llamada_skipped_non_url": {
+                    "count": stats.link_llamada_skipped_non_url,
+                    "items": stats.link_llamada_skipped_non_url_items,
+                },
                 "new": stats.leads_created_new,
                 "merged": stats.leads_merged,
                 "absorbed": stats.merge_absorbed,
@@ -2578,6 +2657,15 @@ def format_summary(
     ])
     if stats.lead_updates_by_field:
         lines.append("  updates por campo: " + ", ".join(f"{k}={v}" for k, v in sorted(stats.lead_updates_by_field.items())))
+    if stats.link_llamada_skipped_non_url:
+        propagated = stats.lead_updates_by_field.get("link_llamada", 0)
+        lines.append(
+            f"  link_llamada: {propagated} URLs propagadas | "
+            f"{stats.link_llamada_skipped_non_url} descartadas (texto libre, no URL)"
+        )
+        for item in stats.link_llamada_skipped_non_url_items:
+            lid = item.get("lead_id")
+            lines.append(f"    descartado lead {lid}: {item.get('valor')!r}")
     lines.extend([
         f"  ambiguo: {stats.match_ambiguo} | posible_dup nombre: {stats.posible_duplicado_nombre}",
     ])

@@ -40,6 +40,7 @@ export function CobranzaPerfilPage() {
   const [formPrecioContrato, setFormPrecioContrato] = useState('')
   const [savingContrato, setSavingContrato] = useState(false)
   const [formFile, setFormFile] = useState<File | null>(null)
+  const [formComprobanteUrl, setFormComprobanteUrl] = useState('')
   const [formExistingUrl, setFormExistingUrl] = useState<string | null>(null)
   const [clearComprobante, setClearComprobante] = useState(false)
   const cuotaFileRef = useRef<HTMLInputElement>(null)
@@ -102,6 +103,7 @@ export function CobranzaPerfilPage() {
     setFormFecha(todayIsoLocal())
     setFormConcepto(suggestPaymentConcepto(perfil.pagos))
     setFormFile(null)
+    setFormComprobanteUrl('')
     setFormExistingUrl(null)
     setClearComprobante(false)
     setAddOpen(true)
@@ -113,6 +115,9 @@ export function CobranzaPerfilPage() {
     setFormFecha((p.fecha || '').slice(0, 10) || todayIsoLocal())
     setFormConcepto((p.concepto || '').trim() || 'Otro')
     setFormFile(null)
+    setFormComprobanteUrl(
+      p.comprobante_url && /^https?:\/\//i.test(p.comprobante_url) ? p.comprobante_url : '',
+    )
     setFormExistingUrl(p.comprobante_url || null)
     setClearComprobante(false)
     setAddOpen(true)
@@ -144,8 +149,20 @@ export function CobranzaPerfilPage() {
         comprobante_url = await uploadComprobante(formFile)
       } else if (clearComprobante) {
         comprobante_url = ''
-      } else if (!editPago) {
-        comprobante_url = null
+      } else {
+        const typed = formComprobanteUrl.trim()
+        if (typed) {
+          if (!/^https?:\/\//i.test(typed)) {
+            toast('El comprobante debe ser una URL http(s) válida o quedar vacío.')
+            setBusy(false)
+            return
+          }
+          comprobante_url = typed
+        } else if (editPago && formExistingUrl) {
+          comprobante_url = ''
+        } else if (!editPago) {
+          comprobante_url = null
+        }
       }
 
       const body: Record<string, unknown> = {
@@ -635,6 +652,17 @@ export function CobranzaPerfilPage() {
               Comprobante
             </span>
             <input
+              type="url"
+              value={formComprobanteUrl}
+              onChange={(e) => {
+                setFormComprobanteUrl(e.target.value)
+                if (e.target.value.trim()) setClearComprobante(false)
+              }}
+              disabled={busy}
+              placeholder="https://drive.google.com/… (opcional)"
+              className="mb-2 w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[12px] text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-50"
+            />
+            <input
               ref={cuotaFileRef}
               type="file"
               accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -643,7 +671,10 @@ export function CobranzaPerfilPage() {
                 const file = e.target.files?.[0] || null
                 e.target.value = ''
                 setFormFile(file)
-                if (file) setClearComprobante(false)
+                if (file) {
+                  setClearComprobante(false)
+                  setFormComprobanteUrl('')
+                }
               }}
             />
             <div className="flex flex-wrap items-center gap-2">
@@ -675,6 +706,7 @@ export function CobranzaPerfilPage() {
                   disabled={busy}
                   onClick={() => {
                     setFormFile(null)
+                    setFormComprobanteUrl('')
                     setClearComprobante(true)
                   }}
                   className="text-[11px] text-[#F87171]"
@@ -746,8 +778,21 @@ function ComprobanteThumb({
   compact?: boolean
 }) {
   const href = resolveMediaUrl(url)
+  const isExternal = /^https?:\/\//i.test((url || '').trim())
   const isPdf = href.toLowerCase().includes('.pdf')
   if (compact) {
+    if (isExternal) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:underline"
+        >
+          Ver
+        </a>
+      )
+    }
     return (
       <a
         href={href}

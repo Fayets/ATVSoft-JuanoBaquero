@@ -34,8 +34,10 @@ export function MainLayoutShell({ children }: MainLayoutShellProps) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />
         <main
-          className={`flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8 ${
-            pathname === '/panel-diario' ? 'max-w-none' : 'max-w-[1580px]'
+          className={`flex-1 p-4 sm:p-6 lg:p-8 ${
+            pathname === '/panel-diario'
+              ? 'max-w-none overflow-x-auto'
+              : 'max-w-[1580px] overflow-x-hidden'
           }`}
         >
           {children}

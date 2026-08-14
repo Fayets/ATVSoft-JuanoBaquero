@@ -17,11 +17,11 @@
   --neo-text2: #a1a1aa;
   --neo-text3: #71717a;
   --neo-mono: var(--font-mono), 'JetBrains Mono', 'SF Mono', monospace;
-  --neo-col-gap: 1rem;
+  --neo-col-gap: 0.75rem;
   --neo-cols:
-    3.25rem minmax(5rem, 0.95fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr)
-    minmax(4.75rem, 0.7fr) minmax(4.75rem, 0.7fr) minmax(4.5rem, 0.75fr) minmax(6.25rem, 0.85fr) minmax(6.5rem, 0.8fr)
-    minmax(5.75rem, 0.8fr) minmax(5.75rem, 0.8fr) minmax(4.25rem, 0.6fr) minmax(4.25rem, 0.6fr);
+    3.25rem minmax(5rem, 0.95fr) minmax(5.5rem, 0.85fr) minmax(5.5rem, 0.85fr) minmax(4.5rem, 0.7fr)
+    minmax(4rem, 0.55fr) minmax(4rem, 0.55fr) minmax(4.5rem, 0.75fr) minmax(6.25rem, 0.85fr) minmax(6.5rem, 0.8fr)
+    minmax(5.75rem, 0.8fr) minmax(5.75rem, 0.8fr) minmax(3.75rem, 0.5fr) minmax(3.75rem, 0.5fr);
 
   position: relative;
   margin: -1rem;
@@ -29,7 +29,8 @@
   padding: 0.75rem 1rem 2rem;
   color: var(--neo-text);
   font-family: var(--font-inter), system-ui, sans-serif;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: hidden;
   isolation: isolate;
   background: var(--neo-bg);
   border-radius: 0;
@@ -288,7 +289,7 @@
   box-shadow:
     0 0 0 1px rgba(230, 57, 70, 0.04) inset,
     0 8px 32px rgba(0, 0, 0, 0.45);
-  overflow-x: auto;
+  overflow-x: clip;
 }
 
 .neo-panel__module::before,
@@ -553,8 +554,8 @@
 
 .neo-calls {
   width: 100%;
-  min-width: 72rem;
-  overflow-x: visible;
+  min-width: 81rem;
+  overflow-x: auto;
   border: 1px solid var(--neo-border-dim);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.25);
@@ -563,7 +564,7 @@
 .neo-calls__head,
 .neo-calls__row {
   width: 100%;
-  min-width: 0;
+  min-width: 81rem;
   display: grid;
   grid-template-columns: var(--neo-cols);
   column-gap: var(--neo-col-gap);

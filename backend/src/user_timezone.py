@@ -17,6 +17,7 @@ ALLOWED_TIMEZONES = frozenset(
         "America/Lima",
         "America/Santiago",
         "America/New_York",
+        "Asia/Dubai",
     }
 )
 

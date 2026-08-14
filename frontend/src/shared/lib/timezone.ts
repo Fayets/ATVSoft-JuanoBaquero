@@ -19,6 +19,7 @@ export const TIMEZONE_OPTIONS: readonly TimezoneOption[] = [
   { id: 'pe', flag: '🇵🇪', label: 'Perú', timeZone: 'America/Lima' },
   { id: 'cl', flag: '🇨🇱', label: 'Chile', timeZone: 'America/Santiago' },
   { id: 'us', flag: '🇺🇸', label: 'USA East', timeZone: 'America/New_York' },
+  { id: 'ae', flag: '🇦🇪', label: 'Dubái', timeZone: 'Asia/Dubai' },
 ] as const
 
 export function findTimezoneOption(timeZone: string | null | undefined): TimezoneOption {

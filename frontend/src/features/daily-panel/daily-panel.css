@@ -29,8 +29,8 @@
   padding: 0.75rem 1rem 2rem;
   color: var(--neo-text);
   font-family: var(--font-inter), system-ui, sans-serif;
-  overflow-x: clip;
-  overflow-y: hidden;
+  overflow-x: visible;
+  overflow-y: visible;
   isolation: isolate;
   background: var(--neo-bg);
   border-radius: 0;
@@ -79,6 +79,7 @@
   z-index: 1;
   width: 100%;
   max-width: none;
+  min-width: 0;
 }
 
 .neo-panel__header {
@@ -289,7 +290,8 @@
   box-shadow:
     0 0 0 1px rgba(230, 57, 70, 0.04) inset,
     0 8px 32px rgba(0, 0, 0, 0.45);
-  overflow-x: clip;
+  min-width: 0;
+  overflow-x: visible;
 }
 
 .neo-panel__module::before,
@@ -554,22 +556,34 @@
 
 .neo-calls {
   width: 100%;
-  min-width: 81rem;
-  overflow-x: auto;
+  min-width: 0;
+  overflow: visible;
   border: 1px solid var(--neo-border-dim);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.25);
 }
 
-.neo-calls__head,
-.neo-calls__row {
-  width: 100%;
-  min-width: 81rem;
+.neo-calls__scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.neo-calls__grid {
   display: grid;
   grid-template-columns: var(--neo-cols);
   column-gap: var(--neo-col-gap);
-  row-gap: 0;
-  gap: var(--neo-col-gap);
+  min-width: 81rem;
+  width: max(100%, 81rem);
+}
+
+.neo-calls__head,
+.neo-calls__row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
 }
 
 .neo-calls__head > *,
@@ -593,8 +607,6 @@
   align-items: center;
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--neo-border-dim);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 56px;
 }
 
 .neo-calls__row:last-child {
@@ -603,8 +615,7 @@
 
 .neo-calls__row:hover {
   background: rgba(230, 57, 70, 0.06);
-  border-left: 2px solid var(--neo-accent);
-  padding-left: calc(1rem - 2px);
+  box-shadow: inset 2px 0 0 var(--neo-accent);
 }
 
 .neo-calls__hora {
@@ -866,6 +877,13 @@
 }
 
 @media (max-width: 768px) {
+  .neo-calls__grid {
+    min-width: 0;
+    width: 100%;
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+
   .neo-calls__head {
     display: none;
   }

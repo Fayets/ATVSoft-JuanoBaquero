@@ -777,45 +777,49 @@ export const DailyCallsTable = memo(function DailyCallsTable({
           </button>
         </div>
       ) : null}
-      <div className="neo-calls__head">
-        <div>Hora</div>
-        <div>Lead</div>
-        <div>Closer</div>
-        <div>Triajer</div>
-        <div>Setter</div>
-        <div>Triaje</div>
-        <div>Outbound</div>
-        <div>Link Fathom</div>
-        <div>Status</div>
-        <div>Calif. / Desc.</div>
-        <div>Prog. comprado</div>
-        <div>Prog. ofrecido</div>
-        <div>Pago</div>
-        <div>Debe</div>
+      <div className="neo-calls__scroll">
+        <div className="neo-calls__grid">
+          <div className="neo-calls__head">
+            <div>Hora</div>
+            <div>Lead</div>
+            <div>Closer</div>
+            <div>Triajer</div>
+            <div>Setter</div>
+            <div>Triaje</div>
+            <div>Outbound</div>
+            <div>Link Fathom</div>
+            <div>Status</div>
+            <div>Calif. / Desc.</div>
+            <div>Prog. comprado</div>
+            <div>Prog. ofrecido</div>
+            <div>Pago</div>
+            <div>Debe</div>
+          </div>
+          {paged.map((row) => (
+            <DailyCallRow
+              key={row.id}
+              row={row}
+              closerOptions={closerSelectOptions}
+              triajerOptions={triajerOptions}
+              setterOptions={setterOptions}
+              programOptions={programOptions}
+              defaultCloser={defaultCloser}
+              onStatusChange={onStatusChange}
+              onCloserChange={onCloserChange}
+              onTriajerChange={onTriajerChange}
+              onSetterChange={onSetterChange}
+              onTriajeHechoChange={onTriajeHechoChange}
+              onOutboundChange={onOutboundChange}
+              onCalificacionChange={onCalificacionChange}
+              onFathomLinkChange={onFathomLinkChange}
+              onPaymentChange={onPaymentChange}
+              onOwedChange={onOwedChange}
+              onProgramOfferedChange={onProgramOfferedChange}
+              onProgramadaOfrecidoChange={onProgramadaOfrecidoChange}
+            />
+          ))}
+        </div>
       </div>
-      {paged.map((row) => (
-        <DailyCallRow
-          key={row.id}
-          row={row}
-          closerOptions={closerSelectOptions}
-          triajerOptions={triajerOptions}
-          setterOptions={setterOptions}
-          programOptions={programOptions}
-          defaultCloser={defaultCloser}
-          onStatusChange={onStatusChange}
-          onCloserChange={onCloserChange}
-          onTriajerChange={onTriajerChange}
-          onSetterChange={onSetterChange}
-          onTriajeHechoChange={onTriajeHechoChange}
-          onOutboundChange={onOutboundChange}
-          onCalificacionChange={onCalificacionChange}
-          onFathomLinkChange={onFathomLinkChange}
-          onPaymentChange={onPaymentChange}
-          onOwedChange={onOwedChange}
-          onProgramOfferedChange={onProgramOfferedChange}
-          onProgramadaOfrecidoChange={onProgramadaOfrecidoChange}
-        />
-      ))}
       {items.length > PAGE_SIZE ? (
         <div className="neo-calls__pagination">
           <button

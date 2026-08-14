@@ -36,7 +36,7 @@ export function MainLayoutShell({ children }: MainLayoutShellProps) {
         <main
           className={`flex-1 p-4 sm:p-6 lg:p-8 ${
             pathname === '/panel-diario'
-              ? 'max-w-none overflow-x-auto'
+              ? 'max-w-none overflow-x-hidden'
               : 'max-w-[1580px] overflow-x-hidden'
           }`}
         >

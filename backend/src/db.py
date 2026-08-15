@@ -1955,10 +1955,52 @@ def _migrate_postgres_legacy_juano() -> None:
         conn.close()
 
 
+def _migrate_postgres_lead_presento() -> None:
+    """Columna presento en lead + backfill desde legacy_meta.presento."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "ALTER TABLE lead ADD COLUMN IF NOT EXISTS presento TEXT DEFAULT ''"
+                )
+            except Exception:
+                pass
+            try:
+                cur.execute(
+                    """
+                    UPDATE lead
+                    SET presento = TRIM(COALESCE(legacy_meta->>'presento', ''))
+                    WHERE COALESCE(TRIM(presento), '') = ''
+                      AND COALESCE(TRIM(legacy_meta->>'presento'), '') <> ''
+                    """
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
     _migrate_postgres_authuser_timezone()
+    _migrate_postgres_lead_presento()
     _migrate_postgres_lead_call_to_timestamp()
     _migrate_postgres_lead_agendo_to_timestamp()
     _migrate_postgres_drop_pago_en_llamada()

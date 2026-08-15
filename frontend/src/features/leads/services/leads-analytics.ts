@@ -6,12 +6,20 @@ import { apiFetch } from '@/lib/api'
 
 export type LeadRow = Record<string, unknown> & {
   email?: string | null
+  presento?: string | null
+  merged_into?: string | null
+  status?: string | null
+  payment?: number | string | null
 }
 
 export type LeadsFunnel = {
   chats: number
   conversaciones: number
   agendas: number
+  /** Leads con call en el mes. */
+  llamadas: number
+  /** Cerrado + Seguimiento + Descalificado + No show. */
+  resueltas: number
   shows: number
   noShows: number
   cierres: number
@@ -20,6 +28,8 @@ export type LeadsFunnel = {
   ticketPromedio: number
   closeRate: number
   showUpRate: number
+  /** resueltas / llamadas × 100 */
+  cobertura: number
   tasaAgendamiento: number
   cashPorAgenda: number
   cashPorShow: number
@@ -29,6 +39,8 @@ export type LeadsFunnel = {
 export type WeekMetrics = {
   agendas: number[]
   conversaciones: number[]
+  llamadas: number[]
+  resueltas: number[]
   shows: number[]
   cierres: number[]
   /** Cash por bucket: reportes closer (`ingreso`) + seguimiento + cuotas. El embudo mensual `ingresos` = Pagó + seguimiento + cuotas. */
@@ -88,6 +100,10 @@ export function computeCashCollectedComposition(
   for (const l of leads) {
     const lid = String(l.id ?? '')
     if (!lid || leadIdsWithPaymentHistory.has(lid)) continue
+    // Defensa: leads vaciados/absorbidos no aportan fallback (el cash vive en el ganador vía LeadPayment).
+    const status = String(l.status ?? '').trim().toLowerCase()
+    const mergedInto = String(l.merged_into ?? '').trim()
+    if (status === 'merged' || mergedInto) continue
     const m = Number(l.payment) || 0
     if (m > 0) pago += m
   }
@@ -123,6 +139,11 @@ export type LeadsAnalytics = LeadsFunnel & {
   agendasStories: number
   agendasReels: number
   agendasAds: number
+  /** Agendas declaradas en reportes setter (solo para T. Agendamiento). */
+  agendasSetter: number
+  agendasSetterByWeek: number[]
+  /** [4 semanas][7 días] agendas setter — solo T. Agendamiento diario. */
+  agendasSetterByWeekDay: number[][]
   showsOrganico: number
   showsAds: number
   cierresOrganico: number
@@ -150,7 +171,7 @@ export function leadHasAgenda(l: LeadRow): boolean {
 
 export function leadHasShow(l: LeadRow): boolean {
   const st = String(l.status ?? '').trim().toLowerCase()
-  return leadHasAgenda(l) && st !== 'no show'
+  return ['cerrado', 'seguimiento', 'descalificado'].includes(st)
 }
 
 export function leadIsCierre(l: LeadRow): boolean {
@@ -230,9 +251,20 @@ export function sortLeadsForFunnelStep(leads: LeadRow[], step: FunnelLeadStep): 
 
 export function calcFunnel(leads: LeadRow[], conversaciones?: number): LeadsFunnel {
   const agendas = leads.filter(leadHasAgenda).length
-  const noShows = leads.filter(l => String(l.status ?? '').trim().toLowerCase() === 'no show').length
-  const shows = leads.filter(leadHasShow).length
-  const cierres = leads.filter(leadIsCierre).length
+  const statusOf = (l: LeadRow) => String(l.status ?? '').trim().toLowerCase()
+  const withCall = leads.filter((l) => {
+    const c = l.call ?? l.call_at ?? l.scheduled_at
+    return c != null && String(c).trim() !== ''
+  })
+  const llamadas = withCall.length
+  const resueltas = withCall.filter((l) =>
+    ['cerrado', 'seguimiento', 'descalificado', 'no show'].includes(statusOf(l)),
+  ).length
+  const shows = withCall.filter((l) =>
+    ['cerrado', 'seguimiento', 'descalificado'].includes(statusOf(l)),
+  ).length
+  const noShows = withCall.filter((l) => statusOf(l) === 'no show').length
+  const cierres = withCall.filter((l) => statusOf(l) === 'cerrado').length
   const ingresos = leads.reduce((s, l) => s + (Number(l.payment) || 0), 0)
   const facturacion = leads.reduce((s, l) => s + (Number(l.revenue) || 0), 0)
   const conv = conversaciones ?? leads.length
@@ -240,10 +272,18 @@ export function calcFunnel(leads: LeadRow[], conversaciones?: number): LeadsFunn
   return {
     chats: 0,
     conversaciones: conv,
-    agendas, shows, noShows, cierres, ingresos, facturacion,
+    agendas,
+    llamadas,
+    resueltas,
+    shows,
+    noShows,
+    cierres,
+    ingresos,
+    facturacion,
     ticketPromedio: cierres > 0 ? ingresos / cierres : 0,
     closeRate: shows > 0 ? (cierres / shows) * 100 : 0,
-    showUpRate: agendas > 0 ? ((agendas - noShows) / agendas) * 100 : 0,
+    showUpRate: resueltas > 0 ? (shows / resueltas) * 100 : 0,
+    cobertura: llamadas > 0 ? (resueltas / llamadas) * 100 : 0,
     tasaAgendamiento: conv > 0 ? (agendas / conv) * 100 : 0,
     cashPorAgenda: agendas > 0 ? ingresos / agendas : 0,
     cashPorShow: shows > 0 ? ingresos / shows : 0,
@@ -315,6 +355,28 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   const setterReports: Record<string, unknown>[] = []
   const closerReports: Record<string, unknown>[] = []
   let programPrices: Record<string, number> = {}
+  let funnelKpis: {
+    agendas: number
+    llamadas: number
+    resueltas: number
+    shows: number
+    no_shows: number
+    cierres: number
+    cobertura: number
+    agendas_by_week: number[]
+    llamadas_by_week: number[]
+    resueltas_by_week: number[]
+    shows_by_week: number[]
+    no_shows_by_week: number[]
+    cierres_by_week: number[]
+    agendas_by_week_day?: number[][]
+    llamadas_by_week_day?: number[][]
+    resueltas_by_week_day?: number[][]
+    shows_by_week_day?: number[][]
+    no_shows_by_week_day?: number[][]
+    cierres_by_week_day?: number[][]
+    facturacion_cerrados: number
+  } | null = null
 
   const range = monthRangeIso(month)
   let seguimientoEntries: { fecha: string; monto: number }[] = []
@@ -328,6 +390,7 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     const programsReq = apiFetch('/programs')
     const reelsMetricsReq = apiFetch(`/reels/metrics?month=${encodeURIComponent(month)}`)
     const storiesMetricsReq = apiFetch(`/stories/metrics?month=${encodeURIComponent(month)}`)
+    const funnelReq = apiFetch(`/leads/funnel-kpis?month=${encodeURIComponent(month)}`)
     const segReq =
       range != null
         ? apiFetch(`/team/seguimiento-reports/month?month=${encodeURIComponent(month)}`)
@@ -342,7 +405,7 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
             `/team/reports?desde=${encodeURIComponent(range.desde)}&hasta=${encodeURIComponent(range.hasta)}`,
           )
         : Promise.resolve(new Response('', { status: 400 }))
-    const [leadsRes, repRes, progRes, segRes, cuotasRes, reelsMetricsRes, storiesMetricsRes] =
+    const [leadsRes, repRes, progRes, segRes, cuotasRes, reelsMetricsRes, storiesMetricsRes, funnelRes] =
       await Promise.all([
         leadsReq,
         reportsReq,
@@ -351,10 +414,60 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
         cuotasReq,
         reelsMetricsReq,
         storiesMetricsReq,
+        funnelReq,
       ])
     if (leadsRes.ok) {
       const j = (await leadsRes.json().catch(() => ({}))) as { leads?: LeadRow[] }
       if (Array.isArray(j.leads)) leads.push(...j.leads)
+    }
+    if (funnelRes.ok) {
+      const fj = (await funnelRes.json().catch(() => ({}))) as Record<string, unknown>
+      funnelKpis = {
+        agendas: Number(fj.agendas) || 0,
+        llamadas: Number(fj.llamadas) || 0,
+        resueltas: Number(fj.resueltas) || 0,
+        shows: Number(fj.shows) || 0,
+        no_shows: Number(fj.no_shows) || 0,
+        cierres: Number(fj.cierres) || 0,
+        cobertura: Number(fj.cobertura) || 0,
+        agendas_by_week: Array.isArray(fj.agendas_by_week)
+          ? (fj.agendas_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        llamadas_by_week: Array.isArray(fj.llamadas_by_week)
+          ? (fj.llamadas_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        resueltas_by_week: Array.isArray(fj.resueltas_by_week)
+          ? (fj.resueltas_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        shows_by_week: Array.isArray(fj.shows_by_week)
+          ? (fj.shows_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        no_shows_by_week: Array.isArray(fj.no_shows_by_week)
+          ? (fj.no_shows_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        cierres_by_week: Array.isArray(fj.cierres_by_week)
+          ? (fj.cierres_by_week as number[]).map((n) => Number(n) || 0)
+          : [0, 0, 0, 0],
+        agendas_by_week_day: Array.isArray(fj.agendas_by_week_day)
+          ? (fj.agendas_by_week_day as number[][])
+          : undefined,
+        llamadas_by_week_day: Array.isArray(fj.llamadas_by_week_day)
+          ? (fj.llamadas_by_week_day as number[][])
+          : undefined,
+        resueltas_by_week_day: Array.isArray(fj.resueltas_by_week_day)
+          ? (fj.resueltas_by_week_day as number[][])
+          : undefined,
+        shows_by_week_day: Array.isArray(fj.shows_by_week_day)
+          ? (fj.shows_by_week_day as number[][])
+          : undefined,
+        no_shows_by_week_day: Array.isArray(fj.no_shows_by_week_day)
+          ? (fj.no_shows_by_week_day as number[][])
+          : undefined,
+        cierres_by_week_day: Array.isArray(fj.cierres_by_week_day)
+          ? (fj.cierres_by_week_day as number[][])
+          : undefined,
+        facturacion_cerrados: Number(fj.facturacion_cerrados) || 0,
+      }
     }
     if (progRes.ok) {
       const pj = (await progRes.json().catch(() => ({}))) as {
@@ -467,14 +580,12 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
 
   const chats = chatsReels + chatsStories
 
-  // Embudo y series: reportes diarios setter + closer (ventas); programas y revenue desde leads
+  // Embudo KPI: lead (funnel-kpis). Conversaciones + T. Agendamiento: solo reportes setter.
   const sumField = (reports: Record<string, unknown>[], field: string) =>
     reports.reduce((s, r) => s + (Number(r[field]) || 0), 0)
 
   const conversaciones = sumField(setterReports, 'conversaciones')
-  const agendas = sumField(setterReports, 'agendas')
-  const shows = sumField(closerReports, 'shows')
-  const cierres = sumField(closerReports, 'cierres')
+  const agendasSetter = sumField(setterReports, 'agendas')
   const conversacionesStories = sumField(setterReports, 'conversaciones_stories')
   const conversacionesReels = sumField(setterReports, 'conversaciones_reels')
   const agendasStories = sumField(setterReports, 'agendas_stories')
@@ -486,6 +597,18 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   const cierresAds = sumField(closerReports, 'cierres_ads')
   /** Ingreso declarado en reportes closer (solo fallback facturación si no hay programa en leads). */
   const ingresosReports = sumField(closerReports, 'ingreso')
+
+  const agendas = funnelKpis?.agendas ?? 0
+  const llamadas = funnelKpis?.llamadas ?? 0
+  const resueltas = funnelKpis?.resueltas ?? 0
+  const shows = funnelKpis?.shows ?? 0
+  const noShows = funnelKpis?.no_shows ?? 0
+  const cierres = funnelKpis?.cierres ?? 0
+  const facturacionCerrados = funnelKpis?.facturacion_cerrados ?? 0
+  const cobertura =
+    funnelKpis?.cobertura ??
+    (llamadas > 0 ? (resueltas / llamadas) * 100 : 0)
+
   const cashCollectedComposition = computeCashCollectedComposition(
     leads,
     paymentEntries,
@@ -496,7 +619,6 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     cashCollectedComposition.pago +
     cashCollectedComposition.cuotas +
     cashCollectedComposition.seguimiento
-  const noShows = Math.max(0, agendas - shows)
 
   const catalogDefined = Object.keys(programPrices).length > 0
   const leadsWithProgramOfferedCount = leads.filter(
@@ -542,10 +664,15 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       ? facturacion / leadsWithProgramOfferedCount
       : null
 
+  // AOV = facturación de cerrados ÷ cierres (misma población que Close Rate)
+  const aov = cierres > 0 ? facturacionCerrados / cierres : 0
+
   const funnel: LeadsFunnel = {
     chats,
     conversaciones,
     agendas,
+    llamadas,
+    resueltas,
     shows,
     noShows,
     cierres,
@@ -558,16 +685,14 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
           ? cashCollected / cierres
           : 0,
     closeRate: shows > 0 ? (cierres / shows) * 100 : 0,
-    showUpRate: agendas > 0 ? (shows / agendas) * 100 : 0,
-    tasaAgendamiento: conversaciones > 0 ? (agendas / conversaciones) * 100 : 0,
+    // Show Up = Shows ÷ Resueltas (misma cohorte por call; no usar agendas)
+    showUpRate: resueltas > 0 ? (shows / resueltas) * 100 : 0,
+    cobertura,
+    // T. Agendamiento: SOLO reportes setter (misma población; no mezclar agendas crudas)
+    tasaAgendamiento: conversaciones > 0 ? (agendasSetter / conversaciones) * 100 : 0,
     cashPorAgenda: agendas > 0 ? cashCollected / agendas : 0,
     cashPorShow: shows > 0 ? cashCollected / shows : 0,
-    aov:
-      avgTicketFromBilling != null
-        ? avgTicketFromBilling
-        : cierres > 0
-          ? facturacion / cierres
-          : 0,
+    aov,
   }
 
   // Programs breakdown (solo programa comprado / facturación; no `programada_ofrecido_llamada`)
@@ -587,27 +712,62 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     .map(([nombre, v]) => ({ nombre, ...v }))
     .sort((a, b) => b.ingresos - a.ingresos)
 
-  // Weekly + daily distributions from daily_reports by actual date
+  // Weekly + daily: conversaciones/ingresos desde reportes; agendas/shows/cierres/noShows desde lead KPIs
   const allReports = [...setterReports, ...closerReports]
   const byWeek: WeekMetrics = {
-    agendas: [0, 0, 0, 0],
+    agendas: funnelKpis?.agendas_by_week?.length === 4
+      ? [...funnelKpis.agendas_by_week]
+      : [0, 0, 0, 0],
     conversaciones: [0, 0, 0, 0],
-    shows: [0, 0, 0, 0],
-    cierres: [0, 0, 0, 0],
+    llamadas: funnelKpis?.llamadas_by_week?.length === 4
+      ? [...funnelKpis.llamadas_by_week]
+      : [0, 0, 0, 0],
+    resueltas: funnelKpis?.resueltas_by_week?.length === 4
+      ? [...funnelKpis.resueltas_by_week]
+      : [0, 0, 0, 0],
+    shows: funnelKpis?.shows_by_week?.length === 4
+      ? [...funnelKpis.shows_by_week]
+      : [0, 0, 0, 0],
+    cierres: funnelKpis?.cierres_by_week?.length === 4
+      ? [...funnelKpis.cierres_by_week]
+      : [0, 0, 0, 0],
     ingresos: [0, 0, 0, 0],
     facturacion: [0, 0, 0, 0],
-    noShows: [0, 0, 0, 0],
+    noShows: funnelKpis?.no_shows_by_week?.length === 4
+      ? [...funnelKpis.no_shows_by_week]
+      : [0, 0, 0, 0],
   }
   const z7 = () => [0, 0, 0, 0, 0, 0, 0]
+  const cloneWeekDay = (src: number[][] | undefined): number[][] => {
+    if (src?.length === 4 && src.every((r) => Array.isArray(r) && r.length === 7)) {
+      return src.map((r) => [...r])
+    }
+    return [z7(), z7(), z7(), z7()]
+  }
   const byWeekDay: LeadsAnalytics['byWeekDay'] = {
     conversaciones: [z7(), z7(), z7(), z7()],
-    agendas: [z7(), z7(), z7(), z7()],
-    shows: [z7(), z7(), z7(), z7()],
-    cierres: [z7(), z7(), z7(), z7()],
+    agendas: cloneWeekDay(funnelKpis?.agendas_by_week_day),
+    llamadas: cloneWeekDay(funnelKpis?.llamadas_by_week_day),
+    resueltas: cloneWeekDay(funnelKpis?.resueltas_by_week_day),
+    shows: cloneWeekDay(funnelKpis?.shows_by_week_day),
+    cierres: cloneWeekDay(funnelKpis?.cierres_by_week_day),
     ingresos: [z7(), z7(), z7(), z7()],
     facturacion: [z7(), z7(), z7(), z7()],
-    noShows: [z7(), z7(), z7(), z7()],
+    noShows: cloneWeekDay(funnelKpis?.no_shows_by_week_day),
   }
+
+  const agendasSetterByWeek = [0, 0, 0, 0]
+  const agendasSetterByWeekDay = [z7(), z7(), z7(), z7()]
+  setterReports.forEach((r: Record<string, unknown>) => {
+    const date = new Date((r.date as string) + 'T12:00:00')
+    if (Number.isNaN(date.getTime())) return
+    const dayOfMonth = date.getDate()
+    const w = Math.min(3, Math.floor((dayOfMonth - 1) / 7))
+    const dow = (date.getDay() + 6) % 7
+    const ag = Number(r.agendas) || 0
+    agendasSetterByWeek[w] += ag
+    agendasSetterByWeekDay[w][dow] += ag
+  })
 
   allReports.forEach((r: Record<string, unknown>) => {
     const date = new Date((r.date as string) + 'T12:00:00')
@@ -617,15 +777,9 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     const dow = (date.getDay() + 6) % 7 // Mon=0 Sun=6
 
     const conv = Number(r.conversaciones) || 0
-    const ag = Number(r.agendas) || 0
-    const sh = Number(r.shows) || 0
-    const ci = Number(r.cierres) || 0
     const ing = Number(r.ingreso) || 0
 
     byWeek.conversaciones[w] += conv; byWeekDay.conversaciones[w][dow] += conv
-    byWeek.agendas[w] += ag;         byWeekDay.agendas[w][dow] += ag
-    byWeek.shows[w] += sh;           byWeekDay.shows[w][dow] += sh
-    byWeek.cierres[w] += ci;         byWeekDay.cierres[w][dow] += ci
     byWeek.ingresos[w] += ing;       byWeekDay.ingresos[w][dow] += ing
   })
 
@@ -640,6 +794,9 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
   leads.forEach((l) => {
     const lid = String(l.id ?? '')
     if (!lid || leadIdsWithPaymentHistory.has(lid)) return
+    const status = String(l.status ?? '').trim().toLowerCase()
+    const mergedInto = String(l.merged_into ?? '').trim()
+    if (status === 'merged' || mergedInto) return
     const m = Number(l.payment) || 0
     if (m <= 0) return
     const iso = leadMetricDateIso(l)
@@ -662,14 +819,6 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
     byWeekDay.facturacion[w][dow] += bill
   })
 
-  // Compute noShows per week and per day
-  for (let w = 0; w < 4; w++) {
-    byWeek.noShows[w] = Math.max(0, byWeek.agendas[w] - byWeek.shows[w])
-    for (let d = 0; d < 7; d++) {
-      byWeekDay.noShows[w][d] = Math.max(0, byWeekDay.agendas[w][d] - byWeekDay.shows[w][d])
-    }
-  }
-
   return {
     leads,
     conversaciones,
@@ -682,6 +831,9 @@ export async function getLeadsAnalytics(month: string): Promise<{ leads: LeadRow
       agendasStories,
       agendasReels,
       agendasAds,
+      agendasSetter,
+      agendasSetterByWeek,
+      agendasSetterByWeekDay,
       showsOrganico,
       showsAds,
       cierresOrganico,

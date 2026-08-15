@@ -42,6 +42,8 @@ export function SalesDashboardPage() {
       chatsReels: analytics.chatsReels,
       agendasByWeek: analytics.byWeek.agendas,
       conversacionesByWeek: analytics.byWeek.conversaciones,
+      llamadasByWeek: analytics.byWeek.llamadas,
+      resueltasByWeek: analytics.byWeek.resueltas,
       showsByWeek: analytics.byWeek.shows,
       cierresByWeek: analytics.byWeek.cierres,
       ingresosByWeek: analytics.byWeek.ingresos,
@@ -148,7 +150,8 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
       return {
         title: 'Cash del mes',
         result: formatCash(d.ingresos),
-        formula: 'Cash collected = Pagó en leads + seguimiento + cuotas del mes.',
+        formula:
+          'Cash collected = Σ LeadPayment del mes (Pago + Seguimiento/Fee + Cuotas) + Lead.pago solo si el lead no tiene historial de pagos (excluye merged).',
         data: [
           { label: 'Pago (PIF / 1ra cuota / lead sin historial)', value: formatCash(d.cashCollectedComposition.pago) },
           { label: 'Seguimiento (Fee + formularios)', value: formatCash(d.cashCollectedComposition.seguimiento) },
@@ -156,7 +159,7 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
           { label: 'Total cash del mes', value: formatCash(d.ingresos) },
         ],
         source:
-          'Fuente: LeadPayment del mes (por concepto) + Lead.pago solo si no hay historial + seguimiento nativo.',
+          'Fuente: LeadPayment del mes (por concepto) + Lead.pago solo si no hay historial + seguimiento nativo. Idéntico a Cash Collected.',
       }
     case 'conversaciones':
       return {
@@ -168,68 +171,69 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
           { label: 'Reels', value: fN(d.conversacionesReels) },
           { label: 'Total conversaciones', value: fN(d.conversaciones) },
         ],
-        source: 'Fuente: reportes setter (/team/reports) — campo conversaciones (Historias + Reels).',
+        source: 'Según reportes cargados por el equipo (setter). No hay fuente cruda de DMs en ATV.',
       }
     case 'agendas':
       return {
         title: 'Agendas',
         result: fN(d.agendas),
-        formula: 'Suma de agendas en reportes diarios del setter del mes.',
+        formula: 'COUNT de leads con agendo en el mes (timezone del tenant).',
         data: [
-          { label: 'Historias', value: fN(d.agendasStories) },
-          { label: 'Reels', value: fN(d.agendasReels) },
-          { label: 'Ads', value: fN(d.agendasAds) },
-          { label: 'Total agendas', value: fN(d.agendas) },
+          { label: 'Agendas (lead.agendo)', value: fN(d.agendas) },
         ],
-        source: 'Fuente: reportes setter (/team/reports) — llamadas agendadas por canal.',
+        source: 'Fuente: tabla lead, campo agendo. Endpoint /leads/funnel-kpis.',
       }
     case 'noShows':
       return {
         title: 'No Shows',
         result: fN(d.noShows),
-        formula: 'max(0, Agendas − Shows). Agendas del setter menos shows del closer.',
+        formula: "COUNT de leads con call en el mes y status = 'No show'.",
         data: [
-          { label: 'Agendas (setter)', value: fN(d.agendas) },
-          { label: 'Shows (closer ventas)', value: fN(d.shows) },
           { label: 'No shows', value: fN(d.noShows) },
         ],
-        source: 'Fuente: agendas en reportes setter y shows en reportes closer ventas del mes.',
+        source: 'Fuente: tabla lead (call + status). Misma población temporal que Shows/Cierres.',
       }
     case 'showUpRate':
       return {
         title: 'Show Up Rate',
         result: fP(d.showUpRate),
-        formula: '(Shows ÷ Agendas) × 100',
+        formula: '(Shows ÷ Resueltas) × 100 — ambas con call en el mes.',
         data: [
-          { label: 'Shows', value: fN(d.shows) },
-          { label: 'Agendas', value: fN(d.agendas) },
+          { label: 'Shows (Cerrado + Seguimiento + Descalificado)', value: fN(d.shows) },
+          { label: 'Resueltas (+ No show)', value: fN(d.resueltas) },
+          { label: 'Llamadas del mes', value: fN(d.llamadas) },
+          { label: 'Cobertura', value: fP(d.cobertura) },
           { label: 'Show up rate', value: fP(d.showUpRate) },
         ],
-        source: 'Fuente: shows (closer ventas) y agendas (setter) del mes.',
+        source:
+          'Se calcula solo sobre llamadas con desenlace registrado (Cerrado, Seguimiento, Descalificado, No show). Las que siguen en Agendado o Re-agenda no se cuentan.',
       }
     case 'closeRate':
       return {
         title: 'Close Rate',
         result: fP(d.closeRate),
-        formula: '(Cierres ÷ Shows) × 100',
+        formula: '(Cierres ÷ Shows) × 100 — ambas con call en el mes.',
         data: [
-          { label: 'Cierres', value: fN(d.cierres) },
-          { label: 'Shows', value: fN(d.shows) },
+          { label: "Cierres (status = 'Cerrado')", value: fN(d.cierres) },
+          { label: 'Shows (Cerrado + Seguimiento + Descalificado)', value: fN(d.shows) },
+          { label: 'Llamadas del mes', value: fN(d.llamadas) },
+          { label: 'Cobertura', value: fP(d.cobertura) },
           { label: 'Close rate', value: fP(d.closeRate) },
         ],
-        source: 'Fuente: cierres y shows en reportes closer ventas del mes.',
+        source:
+          'Se calcula solo sobre llamadas con desenlace registrado. Cerrado es subconjunto de Shows.',
       }
     case 'tasaAgendamiento':
       return {
-        title: 'T. Agendamiento',
+        title: 'T. Agendamiento (setter)',
         result: fP(d.tasaAgendamiento),
-        formula: '(Agendas ÷ Conversaciones) × 100',
+        formula: '(Agendas setter ÷ Conversaciones setter) × 100',
         data: [
-          { label: 'Agendas', value: fN(d.agendas) },
-          { label: 'Conversaciones', value: fN(d.conversaciones) },
+          { label: 'Agendas (reportes setter)', value: fN(d.agendasSetter) },
+          { label: 'Conversaciones (reportes setter)', value: fN(d.conversaciones) },
           { label: 'Tasa de agendamiento', value: fP(d.tasaAgendamiento) },
         ],
-        source: 'Fuente: reportes setter del mes (agendas y conversaciones).',
+        source: 'Según reportes cargados por el equipo. No usa las agendas crudas del embudo.',
       }
     case 'aov':
       return {
@@ -237,39 +241,38 @@ function getMetricExplanation(id: MonthlyMetricId, d: VDData): MetricExplanation
         result: formatCash(d.aov),
         formula:
           d.cierres > 0
-            ? 'Facturación del mes ÷ Cierres del mes.'
+            ? 'Facturación de cerrados ÷ Cierres del mes.'
             : 'Sin cierres en el mes: AOV = 0.',
         data: [
-          { label: 'Facturación', value: formatCash(d.facturacion) },
           { label: 'Cierres', value: fN(d.cierres) },
           { label: 'AOV', value: formatCash(d.aov) },
         ],
         source:
-          'Fuente: facturación desde leads (Prog. comprado) o ingreso en reportes closer; cierres en reportes closer ventas.',
+          'Facturación = precio de programa (u pago) solo de leads con status Cerrado y call en el mes.',
       }
     case 'cashPorAgenda':
       return {
         title: 'Cash / Agenda',
         result: formatCash(d.cashPorAgenda),
-        formula: d.agendas > 0 ? 'Cash collected del mes ÷ Agendas del mes.' : 'Sin agendas: Cash/Agenda = 0.',
+        formula: d.agendas > 0 ? 'Cash collected del mes ÷ Agendas (lead) del mes.' : 'Sin agendas: Cash/Agenda = 0.',
         data: [
           { label: 'Cash collected', value: formatCash(d.ingresos) },
           { label: 'Agendas', value: fN(d.agendas) },
           { label: 'Cash / agenda', value: formatCash(d.cashPorAgenda) },
         ],
-        source: 'Fuente: cash (Pagó + seguimiento) y agendas (reportes setter).',
+        source: 'Cash = LeadPayment (+ fallback); agendas = lead.agendo.',
       }
     case 'cashPorShow':
       return {
         title: 'Cash / Show',
         result: formatCash(d.cashPorShow),
-        formula: d.shows > 0 ? 'Cash collected del mes ÷ Shows del mes.' : 'Sin shows: Cash/Show = 0.',
+        formula: d.shows > 0 ? 'Cash collected del mes ÷ Shows (resueltas con asistencia) del mes.' : 'Sin shows: Cash/Show = 0.',
         data: [
           { label: 'Cash collected', value: formatCash(d.ingresos) },
           { label: 'Shows', value: fN(d.shows) },
           { label: 'Cash / show', value: formatCash(d.cashPorShow) },
         ],
-        source: 'Fuente: cash (Pagó + seguimiento) y shows (reportes closer ventas).',
+        source: 'Cash = LeadPayment (+ fallback); shows = Cerrado + Seguimiento + Descalificado.',
       }
     default:
       return {
@@ -335,12 +338,17 @@ function VDKpi({
   change,
   hib = true,
   onClick,
+  coverageNote,
+  coverageWarn = false,
 }: {
   label: string
   value: string
   change?: number
   hib?: boolean
   onClick?: () => void
+  /** Ej: "sobre 213 de 1.358 llamadas resueltas" */
+  coverageNote?: string
+  coverageWarn?: boolean
 }) {
   const clr = change === undefined || change === 0 ? 'var(--text3)' : (hib ? change > 0 : change < 0) ? 'var(--green)' : 'var(--text2)'
   const arrow = change !== undefined ? (change > 0 ? '▲' : change < 0 ? '▼' : '─') : ''
@@ -352,6 +360,14 @@ function VDKpi({
     >
       <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text2)] mb-2">{label}</div>
       <div className="font-mono-num text-[28px] font-bold tracking-tight">{value}</div>
+      {coverageNote ? (
+        <div
+          className={`mt-1.5 text-[11px] leading-snug ${coverageWarn ? 'font-medium text-amber-500' : 'text-[var(--text3)]'}`}
+        >
+          {coverageWarn ? '⚠ ' : ''}
+          {coverageNote}
+        </div>
+      ) : null}
       {change !== undefined && (
         <div className="mt-2 text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: clr }}>
           {arrow} {Math.abs(change).toFixed(1)}%<span className="text-[var(--text3)] font-normal ml-1">vs mes ant.</span>
@@ -1202,9 +1218,23 @@ function MensualView({ curr, prev, delta, month }: { curr: VDData; prev: VDData;
         <VDKpi label="Conversaciones" value={fN(curr.conversaciones)} change={delta('conversaciones')} onClick={() => setOpenMetric('conversaciones')} />
         <VDKpi label="Agendas" value={fN(curr.agendas)} change={delta('agendas')} onClick={() => setOpenMetric('agendas')} />
         <VDKpi label="No Shows" value={fN(curr.noShows)} change={delta('noShows')} hib={false} onClick={() => setOpenMetric('noShows')} />
-        <VDKpi label="Show Up Rate" value={fP(curr.showUpRate)} change={delta('showUpRate')} onClick={() => setOpenMetric('showUpRate')} />
-        <VDKpi label="Close Rate" value={fP(curr.closeRate)} change={delta('closeRate')} onClick={() => setOpenMetric('closeRate')} />
-        <VDKpi label="T. Agendamiento" value={fP(curr.tasaAgendamiento)} change={delta('tasaAgendamiento')} onClick={() => setOpenMetric('tasaAgendamiento')} />
+        <VDKpi
+          label="Show Up Rate"
+          value={fP(curr.showUpRate)}
+          change={delta('showUpRate')}
+          onClick={() => setOpenMetric('showUpRate')}
+          coverageNote={`sobre ${fN(curr.resueltas)} de ${fN(curr.llamadas)} llamadas resueltas`}
+          coverageWarn={curr.cobertura < 50}
+        />
+        <VDKpi
+          label="Close Rate"
+          value={fP(curr.closeRate)}
+          change={delta('closeRate')}
+          onClick={() => setOpenMetric('closeRate')}
+          coverageNote={`sobre ${fN(curr.resueltas)} de ${fN(curr.llamadas)} llamadas resueltas`}
+          coverageWarn={curr.cobertura < 50}
+        />
+        <VDKpi label="T. Agendamiento (setter)" value={fP(curr.tasaAgendamiento)} change={delta('tasaAgendamiento')} onClick={() => setOpenMetric('tasaAgendamiento')} />
         <VDKpi label="AOV" value={formatCash(curr.aov)} change={delta('aov')} onClick={() => setOpenMetric('aov')} />
       </div>
       <MetricExplainModal
@@ -1273,7 +1303,7 @@ function MensualView({ curr, prev, delta, month }: { curr: VDData; prev: VDData;
                 { label: 'No Shows', metricId: 'noShows' as const, pv: fN(prev.noShows), cv: fN(curr.noShows), chg: delta('noShows') },
                 { label: 'Show Up Rate', metricId: 'showUpRate' as const, pv: fP(prev.showUpRate), cv: fP(curr.showUpRate), chg: delta('showUpRate') },
                 { label: 'Close Rate', metricId: 'closeRate' as const, pv: fP(prev.closeRate), cv: fP(curr.closeRate), chg: delta('closeRate') },
-                { label: 'T. Agendamiento', metricId: 'tasaAgendamiento' as const, pv: fP(prev.tasaAgendamiento), cv: fP(curr.tasaAgendamiento), chg: delta('tasaAgendamiento') },
+                { label: 'T. Agendamiento (setter)', metricId: 'tasaAgendamiento' as const, pv: fP(prev.tasaAgendamiento), cv: fP(curr.tasaAgendamiento), chg: delta('tasaAgendamiento') },
                 { label: 'AOV', metricId: 'aov' as const, pv: formatCash(prev.aov), cv: formatCash(curr.aov), chg: delta('aov') },
                 { label: 'Cash/Agenda', metricId: 'cashPorAgenda' as const, pv: formatCash(prev.cashPorAgenda), cv: formatCash(curr.cashPorAgenda), chg: delta('cashPorAgenda') },
                 { label: 'Cash/Show', metricId: 'cashPorShow' as const, pv: formatCash(prev.cashPorShow), cv: formatCash(curr.cashPorShow), chg: delta('cashPorShow') },
@@ -1304,9 +1334,9 @@ function MensualView({ curr, prev, delta, month }: { curr: VDData; prev: VDData;
 // ── SEMANAL ──
 function SemanalView({ curr }: { curr: VDData }) {
   const weeks = ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4']
-  const showUpRates = curr.agendasByWeek.map((a, i) => {
+  const showUpRates = curr.resueltasByWeek.map((r, i) => {
     const sh = curr.showsByWeek[i] ?? 0
-    if (a > 0) return (sh / a) * 100
+    if (r > 0) return (sh / r) * 100
     return sh > 0 ? Number.NaN : 0
   })
   const closeRates = curr.showsByWeek.map((s, i) => {
@@ -1314,7 +1344,9 @@ function SemanalView({ curr }: { curr: VDData }) {
     if (s > 0) return (ci / s) * 100
     return ci > 0 ? Number.NaN : 0
   })
-  const tasaAgend = curr.conversacionesByWeek.map((c, i) => c > 0 ? (curr.agendasByWeek[i] / c) * 100 : 0)
+  const tasaAgend = curr.conversacionesByWeek.map((c, i) =>
+    c > 0 ? ((curr.agendasSetterByWeek?.[i] ?? 0) / c) * 100 : 0,
+  )
   const aovW = curr.cierresByWeek.map((c, i) =>
     c > 0 ? (curr.byWeek.facturacion[i] ?? 0) / c : 0,
   )
@@ -1322,10 +1354,12 @@ function SemanalView({ curr }: { curr: VDData }) {
   const rows = [
     { label: 'Conversaciones', data: curr.conversacionesByWeek },
     { label: 'Agendas', data: curr.agendasByWeek },
+    { label: 'Llamadas', data: curr.llamadasByWeek },
+    { label: 'Resueltas', data: curr.resueltasByWeek },
     { label: 'Shows', data: curr.showsByWeek },
     { label: 'No Shows', data: curr.noShowsByWeek },
     { label: 'Cierres', data: curr.cierresByWeek },
-    { label: 'T. Agendamiento %', data: tasaAgend, fmt: fP },
+    { label: 'T. Agendamiento (setter) %', data: tasaAgend, fmt: fP },
     { label: 'Show Up Rate %', data: showUpRates, fmt: fPOrDash },
     { label: 'Close Rate %', data: closeRates, fmt: fPOrDash },
     { label: 'AOV', data: aovW, fmt: formatCash },
@@ -1385,14 +1419,17 @@ function DiarioView({ curr, semana, setSemana }: { curr: VDData; semana: number;
   const w = semana
   const conv = wd.conversaciones[w]
   const agendas = wd.agendas[w]
+  const agendasSetterDay = curr.agendasSetterByWeekDay?.[w] ?? [0, 0, 0, 0, 0, 0, 0]
+  const llamadasD = wd.llamadas[w]
+  const resueltasD = wd.resueltas[w]
   const shows = wd.shows[w]
   const noShowsD = wd.noShows[w]
   const cierres = wd.cierres[w]
   const ingresos = wd.ingresos[w]
   const facturacionD = wd.facturacion[w]
-  const showUpD = agendas.map((a, i) => {
+  const showUpD = resueltasD.map((r, i) => {
     const s = shows[i] ?? 0
-    if (a > 0) return (s / a) * 100
+    if (r > 0) return (s / r) * 100
     return s > 0 ? Number.NaN : 0
   })
   const closeD = shows.map((s, i) => {
@@ -1400,11 +1437,14 @@ function DiarioView({ curr, semana, setSemana }: { curr: VDData; semana: number;
     if (s > 0) return (c / s) * 100
     return c > 0 ? Number.NaN : 0
   })
-  const tasaAgD = conv.map((c, i) => c > 0 ? (agendas[i] / c) * 100 : 0)
+  const tasaAgD = conv.map((c, i) => (c > 0 ? ((agendasSetterDay[i] ?? 0) / c) * 100 : 0))
   const aovD = cierres.map((c, i) => (c > 0 ? facturacionD[i] / c : 0))
 
   const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
   const sumAg = sum(agendas)
+  const sumAgSetter = sum(agendasSetterDay)
+  const sumLlam = sum(llamadasD)
+  const sumRes = sum(resueltasD)
   const sumSh = sum(shows)
   const sumCi = sum(cierres)
   const sumFact = sum(facturacionD)
@@ -1414,15 +1454,22 @@ function DiarioView({ curr, semana, setSemana }: { curr: VDData; semana: number;
   const rows = [
     { label: 'Conversaciones', data: conv, total: sumConv },
     { label: 'Agendas', data: agendas, total: sumAg },
+    { label: 'Llamadas', data: llamadasD, total: sumLlam },
+    { label: 'Resueltas', data: resueltasD, total: sumRes },
     { label: 'Shows', data: shows, total: sumSh },
     { label: 'No Shows', data: noShowsD, total: sum(noShowsD) },
     { label: 'Cierres', data: cierres, total: sumCi },
     { label: 'Ingresos (reportes)', data: ingresos, total: sumIng, fmt: formatCash },
-    { label: 'T. Agendamiento', data: tasaAgD, total: sumConv > 0 ? (sumAg / sumConv) * 100 : 0, fmt: fP },
+    {
+      label: 'T. Agendamiento (setter)',
+      data: tasaAgD,
+      total: sumConv > 0 ? (sumAgSetter / sumConv) * 100 : 0,
+      fmt: fP,
+    },
     {
       label: 'Show Up Rate',
       data: showUpD,
-      total: sumAg > 0 ? (sumSh / sumAg) * 100 : sumSh > 0 ? Number.NaN : 0,
+      total: sumRes > 0 ? (sumSh / sumRes) * 100 : sumSh > 0 ? Number.NaN : 0,
       fmt: fPOrDash,
     },
     {

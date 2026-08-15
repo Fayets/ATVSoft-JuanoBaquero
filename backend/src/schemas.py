@@ -442,6 +442,14 @@ class LeadOut(BaseModel):
     phone: str | None = None
     avatar_type: str | None = None
     status: str = "Pendiente"
+    presento: str | None = Field(
+        default=None,
+        description='Asistencia a la call: "Sí" | "No" | "Por tomar" (columna presento).',
+    )
+    merged_into: str | None = Field(
+        default=None,
+        description="Si el lead fue vaciado/absorbido: id del lead ganador (legacy_meta.merged_into).",
+    )
     origin: str | None = None
     entry_funnel: str | None = None
     keyword: str | None = Field(default=None, description="keyword en BD (ManyChat / reel)")
@@ -514,6 +522,54 @@ class LeadsMetricsOut(BaseModel):
     agendaron: int = 0
     cash_total: float = 0
     cash_por_chat: float = 0
+
+
+class LeadsFunnelKpisOut(BaseModel):
+    """KPIs de embudo desde lead (misma población; timezone del tenant)."""
+
+    month: str
+    timezone: str
+    agendas: int = 0
+    llamadas: int = Field(0, description="Leads con call en el mes.")
+    resueltas: int = Field(
+        0,
+        description="Cerrado + Seguimiento + Descalificado + No show (call en el mes).",
+    )
+    shows: int = Field(
+        0,
+        description="Cerrado + Seguimiento + Descalificado (call en el mes).",
+    )
+    no_shows: int = 0
+    cierres: int = 0
+    show_up_rate: float = 0
+    close_rate: float = 0
+    cobertura: float = Field(0, description="resueltas / llamadas × 100.")
+    agendas_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    llamadas_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    resueltas_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    shows_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    no_shows_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    cierres_by_week: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    # [4 semanas][7 días Lun=0..Dom=6]
+    agendas_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    llamadas_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    resueltas_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    shows_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    no_shows_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    cierres_by_week_day: list[list[int]] = Field(
+        default_factory=lambda: [[0] * 7 for _ in range(4)]
+    )
+    facturacion_cerrados: float = 0
 
 
 class LeadPatchRequest(BaseModel):

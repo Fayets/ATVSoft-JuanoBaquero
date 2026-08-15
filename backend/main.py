@@ -199,7 +199,7 @@ async def lifespan(_: FastAPI):
     print(f"[scheduler] Auto refresh-metrics reels {_fmt_interval_log(get_reels_interval_minutes())}")
     print(
         f"[scheduler] Auto-sync Calendly {_fmt_interval_log(get_calendly_interval_minutes())} "
-        f"(check liviano → sync solo si hay novedades)"
+        f"(check liviano -> sync solo si hay novedades)"
     )
     print("[scheduler] Auto-sync GHL cada 4 h (mes actual, silencioso)")
     yield

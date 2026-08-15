@@ -173,6 +173,8 @@ class Lead(db.Entity):
     manychat_contact_id = Optional(str, default="")
     # Calificación
     status = Optional(str, default="")
+    # Legacy CRM / panel: "Sí" | "No" | "Por tomar" | ""
+    presento = Optional(str, default="")
     punto_agenda = Optional(str, default="")
     # Agenda (agendo = cuándo completó el formulario / webhook Calendly; call = slot elegido; agendo_en = canal)
     agendo = Optional(datetime)

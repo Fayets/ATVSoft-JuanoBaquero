@@ -9,11 +9,12 @@ from pony.orm import ObjectNotFound, db_session
 from src.lead_display_utils import lead_display_nombre
 from src.lead_formulario import merge_formulario, normalize_formulario
 from src.models import CallReport as CallReportEntity
-from src.models import Lead as LeadEntity, LeadPayment, ReelContent, StorySequence, YoutubeContent
+from src.models import AuthUser, Lead as LeadEntity, LeadPayment, ReelContent, StorySequence, YoutubeContent
 from src.schemas import (
     LeadCreateRequest,
     LeadOut,
     LeadPatchRequest,
+    LeadsFunnelKpisOut,
     LeadsListResponse,
     LeadsMetricsOut,
     LlamadasHoyOut,
@@ -27,7 +28,7 @@ from src.services.agent_closer_service import (
     list_llamadas_dia,
     list_llamadas_hoy,
 )
-from src.user_timezone import today_in_zone
+from src.user_timezone import DEFAULT_TIMEZONE, normalize_timezone_name, today_in_zone, zoneinfo_from_name
 from src.services.triajer_service import assign_triajers_to_leads, pick_next_triajer
 from src.services.programs_services import (
     build_program_norm_price_map,
@@ -42,10 +43,22 @@ from src.services.call_report_service import (
 
 router = APIRouter(prefix="/api/leads", tags=["leads"], redirect_slashes=False)
 
-_AR = ZoneInfo("America/Argentina/Buenos_Aires")
-
 _STORY_AGENDA_PREFIX = "story:"
 _YOUTUBE_AGENDA_PREFIX = "youtube:"
+
+
+def _user_tz(user_id: int) -> ZoneInfo:
+    """Requiere db_session activo."""
+    user = AuthUser.get(id=user_id)
+    raw = getattr(user, "timezone", None) if user is not None else None
+    return zoneinfo_from_name(raw)
+
+
+def _user_tz_name(user_id: int) -> str:
+    """Requiere db_session activo."""
+    user = AuthUser.get(id=user_id)
+    raw = getattr(user, "timezone", None) if user is not None else None
+    return normalize_timezone_name(raw)
 
 
 def _normalize_channel_anchor_value(user_id_int: int, raw: str | None) -> str:
@@ -129,25 +142,86 @@ def _lead_effective_dt(row: LeadEntity) -> datetime | None:
     return row.call or row.agendo or row.fecha_bot or row.created_at
 
 
-def _lead_month_ar(row: LeadEntity) -> tuple[int, int] | None:
-    """(año, mes) en Argentina; mismo criterio de calendario que métricas de reels."""
+def _lead_month_local(row: LeadEntity, tz: ZoneInfo) -> tuple[int, int] | None:
+    """(año, mes) en timezone del tenant; mismo criterio de calendario que panel diario."""
     dt = _lead_effective_dt(row)
     if dt is None:
         return None
     if dt.tzinfo is not None:
         dt = dt.replace(tzinfo=None)
     d_utc = dt.replace(tzinfo=timezone.utc)
-    d_ar = d_utc.astimezone(_AR)
-    return (d_ar.year, d_ar.month)
+    d_local = d_utc.astimezone(tz)
+    return (d_local.year, d_local.month)
 
 
-def _lead_month_string_ar(row: LeadEntity) -> str | None:
+def _lead_month_string_for_user(row: LeadEntity, user_id: int) -> str | None:
     """YYYY-MM del mes operativo (mismo criterio que GET /leads ?month=)."""
-    mb = _lead_month_ar(row)
+    mb = _lead_month_local(row, _user_tz(user_id))
     if mb is None:
         return None
     y, m = mb
     return f"{y}-{m:02d}"
+
+
+def _dt_in_month(dt: datetime | None, year: int, month: int, tz: ZoneInfo) -> bool:
+    if dt is None:
+        return False
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    local = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+    return local.year == year and local.month == month
+
+
+def _local_day_of_month(dt: datetime | None, tz: ZoneInfo) -> int | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    local = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+    return local.day
+
+
+def _week_bucket(day_of_month: int) -> int:
+    return min(3, (day_of_month - 1) // 7)
+
+
+def _local_dow_mon0(dt: datetime | None, tz: ZoneInfo) -> int | None:
+    """Día de la semana local: Lun=0 … Dom=6 (alineado al frontend)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    local = dt.replace(tzinfo=timezone.utc).astimezone(tz)
+    return int(local.weekday())
+
+
+def _empty_week_day() -> list[list[int]]:
+    return [[0] * 7 for _ in range(4)]
+
+
+def _presento_is_show(raw: str | None) -> bool:
+    v = (raw or "").strip()
+    if not v:
+        return False
+    # Acepta Sí / Si con o sin acento
+    n = v.casefold().replace("í", "i")
+    return n == "si"
+
+
+_STATUS_SHOW = frozenset({"cerrado", "seguimiento", "descalificado"})
+_STATUS_RESUELTA = frozenset({"cerrado", "seguimiento", "descalificado", "no show"})
+
+
+def _status_norm(row: LeadEntity) -> str:
+    return (row.status or row.estado or "").strip().lower()
+
+
+def _status_is_show(st: str) -> bool:
+    return st in _STATUS_SHOW
+
+
+def _status_is_resuelta(st: str) -> bool:
+    return st in _STATUS_RESUELTA
 
 
 def _lead_sort_ts(row: LeadEntity) -> float:
@@ -228,11 +302,18 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
     if created is not None and created.tzinfo is not None:
         created = created.replace(tzinfo=None)
     date_s = created.date().isoformat() if created else date.today().isoformat()
-    month_s = _lead_month_string_ar(row)
+    month_s = _lead_month_string_for_user(row, int(row.user_id))
     if month_s is None and created is not None:
         month_s = f"{created.year}-{created.month:02d}"
     kw = row.keyword
     price_catalog = program_price_usd_for_prog_raw(norm_prices or {}, row.programa_ofrecido)
+    meta = getattr(row, "legacy_meta", None) or {}
+    merged_raw = ""
+    if isinstance(meta, dict):
+        merged_raw = str(meta.get("merged_into") or "").strip()
+    presento = (getattr(row, "presento", None) or "").strip()
+    if not presento and isinstance(meta, dict):
+        presento = str(meta.get("presento") or "").strip()
     return LeadOut(
         id=str(row.id),
         lead_user_id=str(row.user_id),
@@ -241,6 +322,8 @@ def _to_lead_out(row: LeadEntity, norm_prices: dict[str, float] | None = None) -
         phone=row.telefono,
         avatar_type=row.avatar,
         status=st,
+        presento=presento or None,
+        merged_into=merged_raw or None,
         origin=row.origen,
         entry_funnel=kw,
         keyword=kw,
@@ -313,6 +396,7 @@ def list_leads(
 
     with db_session:
         norm_prices = build_program_norm_price_map(uid)
+        tz = _user_tz(uid)
         # Filtro en Python: Pony 0.7.x no decompila bien `is not None` / cmp en Python 3.13.
         rows = [r for r in list(LeadEntity.select()) if int(r.user_id) == uid]
         if not include_all:
@@ -322,7 +406,7 @@ def list_leads(
             rows = [
                 r
                 for r in rows
-                if (mb := _lead_month_ar(r)) is not None and mb == (year_m, month_m)
+                if (mb := _lead_month_local(r, tz)) is not None and mb == (year_m, month_m)
             ]
 
         rows.sort(key=_lead_sort_ts, reverse=False)
@@ -331,15 +415,20 @@ def list_leads(
     return LeadsListResponse(leads=out)
 
 
-def _operative_month_for_create(month_param: str | None) -> tuple[int, int]:
-    """Mes operativo para anclar fecha_bot/agendo (AR si no se envía month)."""
+def _operative_month_for_create(month_param: str | None, user_id: int | None = None) -> tuple[int, int]:
+    """Mes operativo para anclar fecha_bot/agendo (timezone del tenant si no se envía month)."""
     if month_param and str(month_param).strip():
         mk = _parse_month_query(month_param)
         if mk is None:
             raise HTTPException(status_code=400, detail="month inválido (usar YYYY-MM).")
         return mk
-    now_ar = datetime.now(timezone.utc).astimezone(_AR)
-    return (now_ar.year, now_ar.month)
+    if user_id is not None:
+        with db_session:
+            tz = _user_tz(user_id)
+    else:
+        tz = zoneinfo_from_name(DEFAULT_TIMEZONE)
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    return (now_local.year, now_local.month)
 
 
 def _anchor_datetime_for_operative_month(year: int, month: int) -> datetime:
@@ -358,7 +447,7 @@ def create_lead(
     except ValueError as e:
         raise HTTPException(status_code=400, detail="user_id inválido") from e
 
-    y, mn = _operative_month_for_create(body.month)
+    y, mn = _operative_month_for_create(body.month, uid)
     anchor = _anchor_datetime_for_operative_month(y, mn)
     st = (body.status or "").strip() or "Pendiente"
 
@@ -510,7 +599,7 @@ def leads_metrics(
     user_id: Annotated[str, Depends(require_user_id)],
     month: str | None = Query(
         default=None,
-        description="YYYY-MM; mismo filtro que GET /leads (mes AR por fecha_bot / created_at)",
+        description="YYYY-MM; mismo filtro que GET /leads (mes del tenant por call/agendo)",
     ),
 ) -> LeadsMetricsOut:
     """Métricas agregadas de todos los leads del mes (no filtro BIO)."""
@@ -525,13 +614,14 @@ def leads_metrics(
         if month_key is None:
             raise HTTPException(status_code=400, detail="Parámetro month inválido (usar YYYY-MM).")
     with db_session:
+        tz = _user_tz(uid)
         rows = [r for r in list(LeadEntity.select()) if int(r.user_id) == uid]
         if month_key is not None:
             y, mn = month_key
             rows = [
                 r
                 for r in rows
-                if (mb := _lead_month_ar(r)) is not None and mb == (y, mn)
+                if (mb := _lead_month_local(r, tz)) is not None and mb == (y, mn)
             ]
         total = len(rows)
         agendaron = sum(1 for r in rows if r.agendo is not None)
@@ -542,6 +632,129 @@ def leads_metrics(
         agendaron=agendaron,
         cash_total=cash_total,
         cash_por_chat=cash_por_chat,
+    )
+
+
+@router.get("/funnel-kpis", response_model=LeadsFunnelKpisOut)
+def leads_funnel_kpis(
+    user_id: Annotated[str, Depends(require_user_id)],
+    month: str = Query(..., description="YYYY-MM"),
+) -> LeadsFunnelKpisOut:
+    """Agendas/shows/no-shows/cierres desde lead, filtrados por timezone del tenant."""
+    try:
+        uid = int(user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="user_id inválido") from e
+    month_key = _parse_month_query(month)
+    if month_key is None:
+        raise HTTPException(status_code=400, detail="Parámetro month inválido (usar YYYY-MM).")
+    year_m, month_m = month_key
+    month_str = f"{year_m}-{month_m:02d}"
+
+    with db_session:
+        tz = _user_tz(uid)
+        tz_name = _user_tz_name(uid)
+        norm_prices = build_program_norm_price_map(uid)
+        rows = [r for r in list(LeadEntity.select()) if int(r.user_id) == uid]
+
+        agendas = 0
+        llamadas = 0
+        resueltas = 0
+        shows = 0
+        no_shows = 0
+        cierres = 0
+        facturacion_cerrados = 0.0
+        agendas_by_week = [0, 0, 0, 0]
+        llamadas_by_week = [0, 0, 0, 0]
+        resueltas_by_week = [0, 0, 0, 0]
+        shows_by_week = [0, 0, 0, 0]
+        no_shows_by_week = [0, 0, 0, 0]
+        cierres_by_week = [0, 0, 0, 0]
+        agendas_by_week_day = _empty_week_day()
+        llamadas_by_week_day = _empty_week_day()
+        resueltas_by_week_day = _empty_week_day()
+        shows_by_week_day = _empty_week_day()
+        no_shows_by_week_day = _empty_week_day()
+        cierres_by_week_day = _empty_week_day()
+
+        for r in rows:
+            if _dt_in_month(r.agendo, year_m, month_m, tz):
+                agendas += 1
+                day = _local_day_of_month(r.agendo, tz)
+                dow = _local_dow_mon0(r.agendo, tz)
+                if day is not None and dow is not None:
+                    w_a = _week_bucket(day)
+                    agendas_by_week[w_a] += 1
+                    agendas_by_week_day[w_a][dow] += 1
+
+            if not _dt_in_month(r.call, year_m, month_m, tz):
+                continue
+            day_c = _local_day_of_month(r.call, tz)
+            dow_c = _local_dow_mon0(r.call, tz)
+            w = _week_bucket(day_c) if day_c is not None else 0
+            st = _status_norm(r)
+            if st == "merged":
+                continue
+
+            llamadas += 1
+            llamadas_by_week[w] += 1
+            if dow_c is not None:
+                llamadas_by_week_day[w][dow_c] += 1
+
+            if _status_is_show(st):
+                shows += 1
+                shows_by_week[w] += 1
+                if dow_c is not None:
+                    shows_by_week_day[w][dow_c] += 1
+            if _status_is_resuelta(st):
+                resueltas += 1
+                resueltas_by_week[w] += 1
+                if dow_c is not None:
+                    resueltas_by_week_day[w][dow_c] += 1
+            if st == "no show":
+                no_shows += 1
+                no_shows_by_week[w] += 1
+                if dow_c is not None:
+                    no_shows_by_week_day[w][dow_c] += 1
+            if st == "cerrado":
+                cierres += 1
+                cierres_by_week[w] += 1
+                if dow_c is not None:
+                    cierres_by_week_day[w][dow_c] += 1
+                priced = program_price_usd_for_prog_raw(norm_prices, r.programa_ofrecido)
+                if priced is not None:
+                    facturacion_cerrados += float(priced)
+                else:
+                    facturacion_cerrados += float(r.pago or 0)
+
+    show_up = (shows / resueltas * 100.0) if resueltas > 0 else 0.0
+    close_rate = (cierres / shows * 100.0) if shows > 0 else 0.0
+    cobertura = (resueltas / llamadas * 100.0) if llamadas > 0 else 0.0
+    return LeadsFunnelKpisOut(
+        month=month_str,
+        timezone=tz_name,
+        agendas=agendas,
+        llamadas=llamadas,
+        resueltas=resueltas,
+        shows=shows,
+        no_shows=no_shows,
+        cierres=cierres,
+        show_up_rate=round(show_up, 2),
+        close_rate=round(close_rate, 2),
+        cobertura=round(cobertura, 2),
+        agendas_by_week=agendas_by_week,
+        llamadas_by_week=llamadas_by_week,
+        resueltas_by_week=resueltas_by_week,
+        shows_by_week=shows_by_week,
+        no_shows_by_week=no_shows_by_week,
+        cierres_by_week=cierres_by_week,
+        agendas_by_week_day=agendas_by_week_day,
+        llamadas_by_week_day=llamadas_by_week_day,
+        resueltas_by_week_day=resueltas_by_week_day,
+        shows_by_week_day=shows_by_week_day,
+        no_shows_by_week_day=no_shows_by_week_day,
+        cierres_by_week_day=cierres_by_week_day,
+        facturacion_cerrados=round(facturacion_cerrados, 2),
     )
 
 

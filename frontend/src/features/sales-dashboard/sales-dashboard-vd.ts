@@ -7,6 +7,8 @@ export type VDData = LeadsAnalytics & {
   chatsReels: number
   agendasByWeek: number[]
   conversacionesByWeek: number[]
+  llamadasByWeek: number[]
+  resueltasByWeek: number[]
   showsByWeek: number[]
   cierresByWeek: number[]
   ingresosByWeek: number[]

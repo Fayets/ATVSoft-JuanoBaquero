@@ -16,6 +16,7 @@ from pony.orm import ObjectNotFound, db_session
 from pydantic import BaseModel, Field
 
 
+from src.lead_audit import append_status_audit, status_is_unworked, touch_lead_updated_at
 from src.lead_formulario import extract_formulario_from_ghl_body, merge_formulario
 from src.models import ApiConnection, Lead
 from src.services.legacy_juano_import import normalize_closer
@@ -525,6 +526,8 @@ def _apply_appointment_to_lead(
     Si el appointment ya existe pero la fecha de call cambió de día (reagenda)
     → se desvincula el lead viejo y se crea uno nuevo para la nueva cita.
     `closer` solo se escribe si viene no vacío (no pisa con "").
+    `status` en update solo se escribe si el lead todavía no fue trabajado
+    (vacío / Agendado / Pendiente). El alta sí nace en Agendado + estado.
     """
     display_name = name.strip() or (email.split("@")[0] if email else "Lead GHL")
     appt_id = (ghl_appointment_id or "").strip()
@@ -584,7 +587,12 @@ def _apply_appointment_to_lead(
                 row.triajer = assigned
         if agendo_at is not None:
             row.agendo = agendo_at
-        row.status = "Agendado"
+        prev_status = (row.status or "").strip()
+        if status_is_unworked(prev_status):
+            row.status = "Agendado"
+            append_status_audit(row, prev_status, "Agendado", "ghl_sync")
+        if status_is_unworked(getattr(row, "estado", None)):
+            row.estado = (row.status or "").strip() or "Agendado"
         row.agendo_en = "GHL"
         row.origen = row.origen or "GHL"
         notas = (row.notas or "").strip()
@@ -597,6 +605,7 @@ def _apply_appointment_to_lead(
         row.notas = notas
         if formulario:
             row.formulario = merge_formulario(row.formulario, formulario)
+        touch_lead_updated_at(row)
         return "updated"
 
     notas_parts: list[str] = []
@@ -622,8 +631,10 @@ def _apply_appointment_to_lead(
         call=call_at,
         agendo=agendo_at or call_at,
         status="Agendado",
+        estado="Agendado",
         agendo_en="GHL",
         formulario=merge_formulario({}, formulario),
+        updated_at=datetime.utcnow(),
     )
     return "created"
 
@@ -824,11 +835,20 @@ def _list_ghl_creds() -> list[dict[str, Any]]:
     return out
 
 
+# PAUSADO 2026-08-17: el job pisaba status en leads ya trabajados.
+# Reactivar a True cuando el overwrite esté verificado en producción.
+GHL_AUTO_SYNC_ENABLED = False
+
+
 def run_ghl_auto_sync_all_users() -> dict[str, int]:
     """Sync silencioso del mes actual para todos los users con GHL.
 
     Si ya hay un sync en curso → skip (no corre en paralelo).
     """
+    if not GHL_AUTO_SYNC_ENABLED:
+        print("[ghl] auto-sync PAUSADO (GHL_AUTO_SYNC_ENABLED=False)", flush=True)
+        return {"created": 0, "updated": 0, "skipped": 1}
+
     if not _GHL_SYNC_LOCK.acquire(blocking=False):
         print("[ghl] auto-sync skip: ya hay un sync en curso", flush=True)
         return {"created": 0, "updated": 0, "skipped": 1}

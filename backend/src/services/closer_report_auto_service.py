@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pony.orm import db_session, flush
 
 from src.models import CloserReport, Lead, TeamMember
+from src.services.agent_closer_service import _day_bounds_utc_naive, _tz_for_user
 from src.services.discord_service import DiscordServices
 
 AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 discord_service = DiscordServices()
 
 
-def _day_bounds(fecha: date) -> tuple[datetime, datetime]:
-    inicio = datetime.combine(fecha, time.min)
-    fin = datetime.combine(fecha, time.max)
-    return inicio, fin
+def _day_bounds(user_id: int, fecha: date) -> tuple[datetime, datetime]:
+    """Día civil del tenant → [inicio, fin] UTC naive (igual que el panel diario)."""
+    return _day_bounds_utc_naive(fecha, _tz_for_user(user_id))
 
 
 def _lead_status(l: Lead) -> str:
@@ -34,7 +34,7 @@ def _calificacion(l: Lead) -> str:
 
 
 def leads_for_closer_on_date(user_id: int, fecha: date, closer_name: str) -> list[Lead]:
-    inicio, fin = _day_bounds(fecha)
+    inicio, fin = _day_bounds(user_id, fecha)
     target = closer_name.strip().lower()
     rows: list[Lead] = []
     for lead in list(Lead.select()):
@@ -76,7 +76,7 @@ def find_closer_member(user_id: int, closer_name: str) -> TeamMember | None:
 
 
 def closer_names_with_calls_on_date(user_id: int, fecha: date) -> set[str]:
-    inicio, fin = _day_bounds(fecha)
+    inicio, fin = _day_bounds(user_id, fecha)
     names: set[str] = set()
     for lead in list(Lead.select()):
         if int(lead.user_id) != user_id or lead.call is None:

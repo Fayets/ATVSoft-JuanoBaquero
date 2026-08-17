@@ -72,6 +72,7 @@ export async function getAdminDailyCalls(
   teamClosers: string[],
   defaultCloser: string,
 ): Promise<DailyCallsResponse> {
+  void defaultCloser
   const q = new URLSearchParams({ fecha })
   const res = await apiFetch(`/admin/panel/llamadas?${q}`, {
     headers: adminHeaders(token),
@@ -90,14 +91,18 @@ export async function getAdminDailyCalls(
 
   const llamadas: DailyCall[] = (Array.isArray(raw.llamadas) ? raw.llamadas : []).map((row) => {
     const closerRaw = (row.closer || '').trim()
-    const fromTeam = teamClosers.find((n) => n.trim().toLowerCase() === closerRaw.toLowerCase())
-    const effective = fromTeam ?? defaultCloser
+    const exact = teamClosers.find((n) => n.trim().toLowerCase() === closerRaw.toLowerCase())
+    const folded = closerRaw.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    const fromTeam =
+      exact ??
+      teamClosers.find((n) => n.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase() === folded) ??
+      null
     return {
       id: row.id,
       hora: row.hora,
       call: row.call?.trim() || null,
       lead: row.lead,
-      closer: effective,
+      closer: fromTeam ?? closerRaw,
       triajer: (row.triajer || '').trim(),
       setter: (row.setter || '').trim(),
       triaje_hecho: Boolean(row.triaje_hecho),

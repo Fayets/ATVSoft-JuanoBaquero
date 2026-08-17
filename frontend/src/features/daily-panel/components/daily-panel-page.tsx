@@ -780,6 +780,7 @@ export function DailyPanelPage({
           onProgramadaOfrecidoChange={handleProgramadaOfrecidoChange}
           onAddManualCall={() => setManualOpen(true)}
           emptyDateLabel={fechaLabel !== '—' ? fechaLabel : undefined}
+          resetPageKey={selectedDate}
         />
       </section>
 

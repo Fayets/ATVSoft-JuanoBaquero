@@ -211,6 +211,7 @@ class Lead(db.Entity):
     legacy_meta = Optional(Json, default=lambda: {})
     recordatorio_enviado = Optional(bool, default=False)
     created_at = Required(datetime, default=lambda: datetime.utcnow())
+    updated_at = Optional(datetime)
 
 
 class HotLead(db.Entity):

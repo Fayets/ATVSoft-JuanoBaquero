@@ -1996,6 +1996,36 @@ def _migrate_postgres_lead_presento() -> None:
         conn.close()
 
 
+def _migrate_postgres_lead_updated_at() -> None:
+    """Columna updated_at en lead (auditoría; Pony no altera tablas existentes)."""
+    if (config("DB_PROVIDER", default="") or "").strip().lower() != "postgres":
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(
+            user=config("DB_USER"),
+            password=config("DB_PASS"),
+            host=config("DB_HOST"),
+            dbname=config("DB_NAME"),
+        )
+    except Exception:
+        return
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "ALTER TABLE lead ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL"
+                )
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     import src.models  # noqa: F401 — registrar entidades Pony antes del mapping
 
@@ -2035,6 +2065,7 @@ def init_db() -> None:
     _seed_offered_program_durations()
     _migrate_postgres_crm_client()
     _migrate_postgres_legacy_juano()
+    _migrate_postgres_lead_updated_at()
     db.generate_mapping(create_tables=True)
     _migrate_agendo_en_iso_to_call()
     _migrate_agendo_en_default_chat_when_agendado()

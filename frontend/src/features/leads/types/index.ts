@@ -143,6 +143,7 @@ export type FilterConfig = {
 }
 
 export const STATUS_COLORS: Record<string, string> = {
+  Agendado: '#38BDF8',
   Cerrado: '#4ADE80',
   Seguimiento: '#60A5FA',
   'Seña': '#FBBF24',
@@ -160,7 +161,7 @@ export const PROGRAM_COLORS: Record<string, string> = {
   Mentoria: '#22C55E',
 }
 
-export const STATUS_OPTIONS = ['Pendiente', 'Seguimiento', 'Seña', 'Cerrado', 'No show', 'Re-agenda', 'Descalificado']
+export const STATUS_OPTIONS = ['Agendado', 'Pendiente', 'Seguimiento', 'Seña', 'Cerrado', 'No show', 'Re-agenda', 'Descalificado']
 export const PROGRAM_OPTIONS = ['', 'Boost', 'Advantage', 'Mentoria']
 export const ORIGIN_OPTIONS = ['Referido', 'Setter', 'Youtube', 'Lead viejo (seguimiento)'] as const
 
@@ -211,6 +212,8 @@ export function canonicalLeadStatus(raw: string | null | undefined): string {
     noshow: 'No show',
     'no asistio': 'No show',
     'no asistió': 'No show',
+    agendado: 'Agendado',
+    scheduled: 'Agendado',
     pendiente: 'Pendiente',
     pending: 'Pendiente',
     descalificado: 'Descalificado',

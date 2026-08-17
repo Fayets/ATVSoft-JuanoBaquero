@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from pony.orm import ObjectNotFound, db_session
 
+from src.lead_audit import append_status_audit, touch_lead_updated_at
 from src.lead_display_utils import lead_display_nombre
 from src.lead_formulario import merge_formulario, normalize_formulario
 from src.models import CallReport as CallReportEntity
@@ -795,8 +796,10 @@ def patch_lead(
             row.avatar = data["avatar_type"] or ""
         if "status" in data:
             st = (data["status"] or "").strip() or "Pendiente"
+            prev_status = (row.status or "").strip()
             row.status = st
             row.estado = st
+            append_status_audit(row, prev_status, st, "patch_lead")
         if "origen" in data:
             row.origen = (data["origen"] or "") or ""
         elif "origin" in data:
@@ -866,6 +869,8 @@ def patch_lead(
             row.outbound = bool(data["outbound"])
         if "calificacion_llamada" in data:
             row.calificacion_llamada = _normalize_calificacion_llamada(data["calificacion_llamada"])
+
+        touch_lead_updated_at(row)
 
         norm_prices = build_program_norm_price_map(uid)
         result = _to_lead_out(row, norm_prices)

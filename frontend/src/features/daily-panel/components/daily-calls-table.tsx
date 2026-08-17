@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 80
 import {
   canonicalLeadStatus,
   PROGRAM_COLORS,
@@ -49,6 +49,8 @@ type Props = {
   onAddManualCall?: () => void
   /** Etiqueta del día seleccionado para mensajes vacíos (ej. 29/07/2026). */
   emptyDateLabel?: string
+  /** Cambia al cambiar de día: no resetear página en un refresh del mismo día. */
+  resetPageKey?: string
 }
 
 function programSelectOptions(programOptions: string[], current: string): string[] {
@@ -118,7 +120,7 @@ const CloserSelect = memo(function CloserSelect({
   leadId,
   closer,
   options,
-  defaultCloser,
+  defaultCloser: _defaultCloser,
   onCloserChange,
 }: {
   leadId: number
@@ -127,9 +129,13 @@ const CloserSelect = memo(function CloserSelect({
   defaultCloser: string
   onCloserChange: (leadId: number, closer: string) => Promise<void>
 }) {
+  void _defaultCloser
   const [saving, setSaving] = useState(false)
-  const value =
-    options.find((o) => o.toLowerCase() === closer.trim().toLowerCase()) ?? defaultCloser
+  const trimmed = closer.trim()
+  const matched = options.find((o) => o.toLowerCase() === trimmed.toLowerCase())
+  const selectOptions =
+    trimmed && !matched ? [trimmed, ...options.filter((o) => o !== trimmed)] : options
+  const value = matched ?? trimmed
 
   const handleChange = async (e: ChangeEvent<HTMLSelectElement>) => {
     const next = e.target.value
@@ -150,7 +156,10 @@ const CloserSelect = memo(function CloserSelect({
       className="neo-calls__closer-select"
       aria-label={`Closer de lead ${leadId}`}
     >
-      {options.map((name) => (
+      {value === '' ? (
+        <option value="">Sin closer</option>
+      ) : null}
+      {selectOptions.map((name) => (
         <option key={name} value={name}>
           {name}
         </option>
@@ -727,6 +736,7 @@ export const DailyCallsTable = memo(function DailyCallsTable({
   onProgramadaOfrecidoChange,
   onAddManualCall,
   emptyDateLabel,
+  resetPageKey,
 }: Props) {
   const [page, setPage] = useState(1)
   const closerSelectOptions = useMemo(
@@ -741,7 +751,7 @@ export const DailyCallsTable = memo(function DailyCallsTable({
 
   useEffect(() => {
     setPage(1)
-  }, [items])
+  }, [resetPageKey])
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)

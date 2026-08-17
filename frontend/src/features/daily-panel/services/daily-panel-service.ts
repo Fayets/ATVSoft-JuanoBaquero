@@ -90,10 +90,21 @@ export function resolveDefaultCloser(closerNames: string[]): string {
   return closerNames[0]
 }
 
+function foldCloserName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase()
+}
+
 function normalizeTeamCloser(closer: string, teamClosers: string[]): string | null {
-  const needle = closer.trim().toLowerCase()
+  const needle = closer.trim()
   if (!needle) return null
-  return teamClosers.find((n) => n.trim().toLowerCase() === needle) ?? null
+  const exact = teamClosers.find((n) => n.trim().toLowerCase() === needle.toLowerCase())
+  if (exact) return exact
+  const folded = foldCloserName(needle)
+  return teamClosers.find((n) => foldCloserName(n) === folded) ?? null
 }
 
 export async function getDailyCalls(
@@ -101,6 +112,7 @@ export async function getDailyCalls(
   defaultCloser: string,
   fecha?: string,
 ): Promise<DailyCallsResponse> {
+  void defaultCloser
   const q = fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''
   const res = await apiFetch(`/leads/llamadas-hoy${q}`)
   const raw = (await res.json().catch(() => ({}))) as DailyCallsResponse & {
@@ -117,9 +129,10 @@ export async function getDailyCalls(
   for (const row of Array.isArray(raw.llamadas) ? raw.llamadas : []) {
     const closerRaw = (row.closer || '').trim()
     const fromTeam = normalizeTeamCloser(closerRaw, teamClosers)
-    const effective = fromTeam ?? defaultCloser
-    if (effective !== closerRaw) {
-      patchCloser.push({ id: row.id, closer: effective })
+    const effective = fromTeam ?? closerRaw
+    // Solo persistir corrección de catálogo (acentos/alias). Nunca el closer default.
+    if (fromTeam && fromTeam !== closerRaw) {
+      patchCloser.push({ id: row.id, closer: fromTeam })
     }
     llamadas.push({
       id: row.id,

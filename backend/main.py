@@ -184,14 +184,16 @@ async def lifespan(_: FastAPI):
         id=CALENDLY_JOB_ID,
         replace_existing=True,
     )
-    scheduler.add_job(
-        auto_sync_ghl,
-        trigger=IntervalTrigger(hours=4),
-        id=GHL_JOB_ID,
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
+    # PAUSADO 2026-08-17: el sync pisaba status="Agendado" en leads ya trabajados.
+    # Reactivar cuando GHL_AUTO_SYNC_ENABLED=True y el overwrite esté verificado en prod.
+    # scheduler.add_job(
+    #     auto_sync_ghl,
+    #     trigger=IntervalTrigger(hours=4),
+    #     id=GHL_JOB_ID,
+    #     replace_existing=True,
+    #     max_instances=1,
+    #     coalesce=True,
+    # )
     bind_sync_scheduler(scheduler)
     apply_sync_schedules()
     scheduler.start()
@@ -201,7 +203,7 @@ async def lifespan(_: FastAPI):
         f"[scheduler] Auto-sync Calendly {_fmt_interval_log(get_calendly_interval_minutes())} "
         f"(check liviano -> sync solo si hay novedades)"
     )
-    print("[scheduler] Auto-sync GHL cada 4 h (mes actual, silencioso)")
+    print("[scheduler] Auto-sync GHL PAUSADO (overwrite de status; no se registra el job)")
     yield
     scheduler.shutdown()
 

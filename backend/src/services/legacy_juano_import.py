@@ -35,6 +35,10 @@ CLOSER_ALIASES: dict[str, str] = {
     "matias": "Matias Sandobal",
     "matias sandobal": "Matias Sandobal",
     "agus olivero": "Agustín Olivero",
+    "agustin olivero": "Agustín Olivero",
+    "agustin": "Agustín Olivero",
+    "agustín": "Agustín Olivero",
+    "agustín olivero": "Agustín Olivero",
 }
 
 TEST_NAMES = frozenset(

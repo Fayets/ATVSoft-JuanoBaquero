@@ -16,6 +16,8 @@ from src.services.closer_report_auto_service import (
     generate_daily_reports_for_user,
     preview_closer_report,
 )
+from src.services.agent_closer_service import _tz_for_user
+from src.services.team_closer_live_service import aggregate_closer_stats_live
 from src.services.discord_service import DiscordServices
 from src.team_reports_pdf import build_team_reports_pdf, fecha_iso_a_dd_mm_yyyy
 
@@ -347,12 +349,14 @@ class CloserStatsOut(BaseModel):
     member_id: int
     nombre: str
     llamadas_agendadas: int
+    resueltas: int = 0
     shows: int
     cierres: int
     calificados: int
     descalificados: int
     ingreso: float
     comision: float
+    cobertura: float = Field(0, description="resueltas / llamadas × 100.")
 
 
 class TeamDashboardOut(BaseModel):
@@ -363,6 +367,22 @@ class TeamDashboardOut(BaseModel):
     total_conversaciones: int = Field(
         ...,
         description="Suma de conversaciones de todos los SetterReport del mes (user_id).",
+    )
+    ingreso_sin_closer: float = Field(0, description="Pagos del mes sin closer asignado en el lead.")
+    ingreso_closer_fuera_equipo: float = Field(
+        0, description="Pagos del mes cuyo closer no matchea un miembro activo."
+    )
+    cash_collected: float = Field(
+        0, description="Cash Collected del mes (LeadPayment + seguimiento + fallback Lead.pago)."
+    )
+    ingreso_atribuido_closers: float = Field(
+        0, description="Σ lead_payment de leads con closer en Equipo."
+    )
+    ingreso_sin_atribuir: float = Field(
+        0, description="Cash Collected − atribuido a closers."
+    )
+    ingreso_fallback_pago: float = Field(
+        0, description="Lead.pago sin historial lead_payment (columna PAGO del panel)."
     )
     setters: list[SetterStatsOut]
     closers: list[CloserStatsOut]
@@ -862,11 +882,6 @@ def team_dashboard(
             if r.user_id == uid and start <= r.fecha <= end
         ]
         total_conversaciones = sum(int(r.conversaciones) for r in setter_rows)
-        closer_rows = [
-            r
-            for r in list(CloserReport.select())
-            if r.user_id == uid and start <= r.fecha <= end
-        ]
 
         members_by_id = {m.id: m for m in _members_for_user(uid)}
 
@@ -880,28 +895,13 @@ def team_dashboard(
             acc["agendas"] += r.agendas
             acc["links_enviados"] += r.links_enviados
 
-        closer_totals: dict[int, dict[str, float | int]] = {}
-        for r in closer_rows:
-            acc = closer_totals.setdefault(
-                r.member_id,
-                {
-                    "llamadas_agendadas": 0,
-                    "shows": 0,
-                    "cierres": 0,
-                    "calificados": 0,
-                    "descalificados": 0,
-                    "ingreso": 0.0,
-                },
-            )
-            acc["llamadas_agendadas"] = int(acc["llamadas_agendadas"]) + r.llamadas_agendadas
-            acc["shows"] = int(acc["shows"]) + r.shows
-            acc["cierres"] = int(acc["cierres"]) + r.cierres
-            acc["calificados"] = int(acc["calificados"]) + r.calificados
-            acc["descalificados"] = int(acc["descalificados"]) + r.descalificados
-            acc["ingreso"] = float(acc["ingreso"]) + float(r.ingreso)
-
         active_setters = [m for m in members_by_id.values() if m.activo and m.rol == "setter"]
         active_closers = [m for m in members_by_id.values() if m.activo and m.rol == "closer"]
+
+        y_s, m_s = ym.split("-")
+        year_m, month_m = int(y_s), int(m_s)
+        tz = _tz_for_user(uid)
+        live = aggregate_closer_stats_live(uid, year_m, month_m, tz, active_closers)
 
         pct = DEFAULT_COMMISSION_PCT / 100.0
 
@@ -910,19 +910,31 @@ def team_dashboard(
         cash_total = 0.0
         total_cierres_mes = 0
         for m in sorted(active_closers, key=lambda x: x.id):
-            t = closer_totals.get(
-                m.id,
-                {
+            t = live.by_member_id.get(m.id)
+            if t is None:
+                t_stats = {
                     "llamadas_agendadas": 0,
+                    "resueltas": 0,
                     "shows": 0,
                     "cierres": 0,
                     "calificados": 0,
                     "descalificados": 0,
                     "ingreso": 0.0,
-                },
-            )
-            ing = float(t["ingreso"])
-            ci = int(t["cierres"])
+                    "cobertura": 0.0,
+                }
+            else:
+                t_stats = {
+                    "llamadas_agendadas": t.llamadas_agendadas,
+                    "resueltas": t.resueltas,
+                    "shows": t.shows,
+                    "cierres": t.cierres,
+                    "calificados": t.calificados,
+                    "descalificados": t.descalificados,
+                    "ingreso": t.ingreso,
+                    "cobertura": t.cobertura,
+                }
+            ing = float(t_stats["ingreso"])
+            ci = int(t_stats["cierres"])
             cash_total += ing
             total_cierres_mes += ci
             com = ing * pct
@@ -931,13 +943,15 @@ def team_dashboard(
                 CloserStatsOut(
                     member_id=m.id,
                     nombre=m.nombre,
-                    llamadas_agendadas=int(t["llamadas_agendadas"]),
-                    shows=int(t["shows"]),
+                    llamadas_agendadas=int(t_stats["llamadas_agendadas"]),
+                    resueltas=int(t_stats["resueltas"]),
+                    shows=int(t_stats["shows"]),
                     cierres=ci,
-                    calificados=int(t["calificados"]),
-                    descalificados=int(t["descalificados"]),
+                    calificados=int(t_stats["calificados"]),
+                    descalificados=int(t_stats["descalificados"]),
                     ingreso=ing,
                     comision=com,
+                    cobertura=float(t_stats["cobertura"]),
                 )
             )
 
@@ -967,6 +981,12 @@ def team_dashboard(
             )
 
         comisiones = comisiones_closer + comisiones_setter
+        ingreso_sin_closer = live.ingreso_sin_closer
+        ingreso_closer_fuera_equipo = live.ingreso_closer_fuera_equipo
+        cash_collected = live.cash_collected
+        ingreso_atribuido_closers = live.ingreso_atribuido_closers
+        ingreso_sin_atribuir = live.ingreso_sin_atribuir
+        ingreso_fallback_pago = live.ingreso_fallback_pago
 
     return TeamDashboardOut(
         month=ym,
@@ -974,6 +994,12 @@ def team_dashboard(
         comisiones=comisiones,
         commission_pct=DEFAULT_COMMISSION_PCT,
         total_conversaciones=total_conversaciones,
+        ingreso_sin_closer=ingreso_sin_closer,
+        ingreso_closer_fuera_equipo=ingreso_closer_fuera_equipo,
+        cash_collected=cash_collected,
+        ingreso_atribuido_closers=ingreso_atribuido_closers,
+        ingreso_sin_atribuir=ingreso_sin_atribuir,
+        ingreso_fallback_pago=ingreso_fallback_pago,
         setters=setter_out,
         closers=closer_out,
     )
